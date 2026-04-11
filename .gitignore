@@ -1,0 +1,17 @@
+# Python/Node ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+node_modules/
+
+# Runtime and test outputs
+*.log
+debug_html/
+extracted_results/
+results/
+simple_results/
+
+# Temporary
+.DS_Store
+*.swp

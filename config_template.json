@@ -1,0 +1,5 @@
+{
+  "NOTION_API_KEY": "ntn_your_api_key_here",
+  "NOTION_DATABASE_ID": "your_database_id_here",
+  "NOTION_VERSION": "2025-09-03"
+}

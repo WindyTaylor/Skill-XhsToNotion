@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "小红书内容抓取与Notion导出",
+  "version": "1.0",
+  "description": "抓取小红书内容并导出为Notion格式的Edge浏览器插件",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*.xiaohongshu.com/*",
+    "https://api.notion.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.xiaohongshu.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ]
+}
