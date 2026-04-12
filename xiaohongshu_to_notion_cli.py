@@ -208,7 +208,7 @@ class NotionSaver:
                     if data.get('tags'):
                         print(f"   标签: {data.get('tags', '')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
                     
-                    return True
+                    return page_id
                 else:
                     print(f"[FAIL] 保存失败: {response.status_code}")
                     print(f"错误信息: {response.text}")
@@ -220,7 +220,65 @@ class NotionSaver:
                     time.sleep(3)
                 else:
                     print("[FAIL] 达到最大重试次数，保存失败")
-                    return False
+                    return None
+
+    def append_tags(self, page_id, new_tags_str):
+        """为已存在的Notion页面追加标签"""
+        import requests
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        headers = {
+            "Authorization": f"Bearer {self.notion_api_key}",
+            "Notion-Version": self.notion_version,
+            "Content-Type": "application/json"
+        }
+        
+        # 1. 获取当前页面的属性
+        try:
+            resp = requests.get(f"https://api.notion.com/v1/pages/{page_id}", headers=headers, verify=False, timeout=15)
+            if resp.status_code != 200:
+                print(f"[FAIL] 获取页面信息失败: {resp.text}")
+                return False
+                
+            page_data = resp.json()
+            existing_tags = []
+            props = page_data.get("properties", {})
+            if "标签" in props and "multi_select" in props["标签"]:
+                existing_tags = [t["name"] for t in props["标签"]["multi_select"]]
+                
+            # 2. 合并并去重标签
+            new_tags = [t.strip() for t in new_tags_str.split(",") if t.strip()]
+            combined_tags = list(set(existing_tags + new_tags))
+            
+            # 3. 更新页面属性
+            update_payload = {
+                "properties": {
+                    "标签": {
+                        "multi_select": [{"name": t} for t in combined_tags]
+                    }
+                }
+            }
+            
+            patch_resp = requests.patch(
+                f"https://api.notion.com/v1/pages/{page_id}", 
+                headers=headers, 
+                json=update_payload, 
+                verify=False, 
+                timeout=15
+            )
+            
+            if patch_resp.status_code == 200:
+                print(f"[OK] 成功追加标签: {', '.join(new_tags)}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+                print(f"当前所有标签: {', '.join(combined_tags)}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+                return True
+            else:
+                print(f"[FAIL] 更新标签失败: {patch_resp.text}")
+                return False
+                
+        except Exception as e:
+            print(f"[FAIL] 追加标签请求异常: {e}")
+            return False
 
 def main():
     parser = argparse.ArgumentParser(description='保存小红书笔记到Notion')
@@ -230,9 +288,25 @@ def main():
     parser.add_argument('--author', help='作者')
     parser.add_argument('--tags', help='标签（逗号分隔）')
     parser.add_argument('--cover', help='封面图片URL')
+    parser.add_argument('--append-tags', help='追加标签（逗号分隔），将应用到最近一次保存的笔记上')
     
     args = parser.parse_args()
     
+    # 如果是追加标签的指令
+    if args.append_tags:
+        last_id_file = Path(__file__).parent / "last_page_id.txt"
+        if not last_id_file.exists():
+            print("[FAIL] 找不到最近保存的笔记记录，无法追加标签。")
+            sys.exit(1)
+        
+        with open(last_id_file, "r", encoding="utf-8") as f:
+            page_id = f.read().strip()
+            
+        saver = NotionSaver()
+        print(f"正在为笔记(ID: {page_id})追加标签...")
+        success = saver.append_tags(page_id, args.append_tags)
+        sys.exit(0 if success else 1)
+        
     # 如果从文件中读取 URL
     target_file = Path(__file__).parent / "url_target.txt"
     if target_file.exists():
@@ -321,11 +395,16 @@ def main():
         duplicate_id = saver.check_duplicate(note_id)
         if duplicate_id:
             print(f"[SKIP] 该笔记已存在于Notion中，跳过保存 (页面ID: {duplicate_id})")
+            # 把已经存在的 ID 写进 last_page_id，这样哪怕是重复的，也能随时给它加标签！
+            with open(Path(__file__).parent / "last_page_id.txt", "w", encoding="utf-8") as f:
+                f.write(duplicate_id)
             sys.exit(0)
             
-    success = saver.save_to_notion(data)
+    page_id = saver.save_to_notion(data)
     
-    if success:
+    if page_id:
+        with open(Path(__file__).parent / "last_page_id.txt", "w", encoding="utf-8") as f:
+            f.write(page_id)
         print("[OK] 处理完成!")
         sys.exit(0)
     else:
