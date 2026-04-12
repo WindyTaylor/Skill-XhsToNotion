@@ -16,19 +16,37 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 class NotionSaver:
     def __init__(self):
-        # 优先从环境变量读取配置，移除硬编码以确保凭证安全
+        import os
+        import sys
+        import json
+        from pathlib import Path
+        
+        # 优先从环境变量读取配置
         self.notion_api_key = os.environ.get("NOTION_API_KEY")
         self.notion_database_id = os.environ.get("NOTION_DATABASE_ID")
         self.notion_version = "2025-09-03"
         
+        # 如果环境变量没有，尝试从本地 config.json 读取（为 OpenClaw Agent 提供便利）
+        config_path = Path(__file__).parent / "config.json"
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                    if not self.notion_api_key:
+                        self.notion_api_key = config.get("NOTION_API_KEY")
+                    if not self.notion_database_id:
+                        self.notion_database_id = config.get("NOTION_DATABASE_ID")
+            except Exception as e:
+                print(f"[WARN] 读取 config.json 失败: {e}")
+        
         if not self.notion_api_key:
-            print("[FAIL] 错误: 未设置环境变量 NOTION_API_KEY")
-            print("请通过 set NOTION_API_KEY=your_api_key 或 export NOTION_API_KEY=your_api_key 进行设置")
+            print("[FAIL] 错误: 未设置 NOTION_API_KEY")
+            print("请通过环境变量或 config.json 进行设置")
             sys.exit(1)
             
         if not self.notion_database_id:
-            print("[FAIL] 错误: 未设置环境变量 NOTION_DATABASE_ID")
-            print("请通过 set NOTION_DATABASE_ID=your_database_id 或 export NOTION_DATABASE_ID=your_database_id 进行设置")
+            print("[FAIL] 错误: 未设置 NOTION_DATABASE_ID")
+            print("请通过环境变量或 config.json 进行设置")
             sys.exit(1)
     
     def save_to_notion(self, data):
@@ -161,7 +179,7 @@ class NotionSaver:
 
 def main():
     parser = argparse.ArgumentParser(description='保存小红书笔记到Notion')
-    parser.add_argument('--url', required=True, help='小红书链接')
+    parser.add_argument('--url', help='小红书链接 (可选，也可从文件读取)')
     parser.add_argument('--title', help='笔记标题 (如果未提供，将自动从URL提取)')
     parser.add_argument('--summary', help='笔记简介 (如果未提供，将自动从URL提取)')
     parser.add_argument('--author', help='作者')
@@ -169,6 +187,18 @@ def main():
     parser.add_argument('--cover', help='封面图片URL')
     
     args = parser.parse_args()
+    
+    # 如果从文件中读取 URL
+    target_file = Path(__file__).parent / "url_target.txt"
+    if target_file.exists():
+        with open(target_file, "r", encoding="utf-8") as f:
+            file_url = f.read().strip()
+            if file_url and not args.url:
+                args.url = file_url
+                
+    if not args.url:
+        print("[FAIL] 错误: 未提供小红书链接")
+        sys.exit(1)
     
     print("小红书转Notion保存工具")
     print("=" * 50)

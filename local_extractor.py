@@ -23,17 +23,14 @@ class XiaohongshuExtractor:
     def get_page_content(self, url):
         """获取页面内容，支持短链接重定向"""
         try:
-            # 处理短链接
-            if 'xhslink.com' in url:
-                # 获取重定向后的真实URL
-                response = requests.head(url, headers=self.headers, allow_redirects=False, timeout=10)
-                if response.status_code in [301, 302, 303, 307, 308]:
-                    url = response.headers.get('Location', url)
-                    print(f"短链接重定向到: {url}")
-            
-            # 获取页面内容
+            # 直接使用 GET 请求获取，让 requests 自动处理重定向
             response = requests.get(url, headers=self.headers, timeout=15)
             response.raise_for_status()
+            
+            # 获取最终的真实 URL（如果发生了重定向）
+            self.final_url = response.url
+            if response.url != url:
+                print(f"短链接重定向到: {response.url}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
             
             # 检查编码
             if response.encoding.lower() != 'utf-8':
@@ -42,7 +39,8 @@ class XiaohongshuExtractor:
             return response.text
             
         except requests.exceptions.RequestException as e:
-            print(f"请求页面失败: {e}")
+            print(f"请求页面失败: {e}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+            self.final_url = url
             return None
             
     def extract_from_html(self, html_content):
@@ -172,7 +170,7 @@ class XiaohongshuExtractor:
         
         # 提取信息
         result = self.extract_from_html(html_content)
-        result['note_url'] = url
+        result['note_url'] = getattr(self, 'final_url', url)
         
         # 验证提取结果
         if result['success']:
