@@ -24,7 +24,7 @@ class NotionSaver:
         # 优先从环境变量读取配置
         self.notion_api_key = os.environ.get("NOTION_API_KEY")
         self.notion_database_id = os.environ.get("NOTION_DATABASE_ID")
-        self.notion_version = "2025-09-03"
+        self.notion_version = "2022-06-28"
         
         # 如果环境变量没有，尝试从本地 config.json 读取（为 OpenClaw Agent 提供便利）
         config_path = Path(__file__).parent / "config.json"
@@ -49,6 +49,47 @@ class NotionSaver:
             print("请通过环境变量或 config.json 进行设置")
             sys.exit(1)
     
+    def check_duplicate(self, note_id):
+        """检查Notion数据库中是否已存在该笔记"""
+        if not note_id:
+            return False
+            
+        headers = {
+            "Authorization": f"Bearer {self.notion_api_key}",
+            "Notion-Version": self.notion_version,
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "filter": {
+                "property": "小红书链接",
+                "url": {
+                    "contains": note_id
+                }
+            }
+        }
+        
+        import requests
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        try:
+            response = requests.post(
+                f"https://api.notion.com/v1/databases/{self.notion_database_id}/query",
+                headers=headers,
+                json=payload,
+                verify=False,
+                timeout=15
+            )
+            if response.status_code == 200:
+                results = response.json().get("results", [])
+                if results:
+                    return results[0].get("id")
+            return False
+        except Exception as e:
+            print(f"[WARN] 检查重复记录失败: {e}")
+            return False
+
     def save_to_notion(self, data):
         """保存数据到Notion数据库"""
         headers = {
@@ -130,6 +171,10 @@ class NotionSaver:
             }
         
         import time
+        import requests
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
         max_retries = 5
         for attempt in range(max_retries):
             try:
@@ -217,6 +262,7 @@ def main():
             extracted = extractor.extract_from_url(args.url)
             
             if extracted.get('success'):
+                data["url"] = extracted.get('note_url', args.url)
                 data["title"] = extracted.get('title', '未命名笔记')
                 data["summary"] = extracted.get('content', '无简介')
                 
@@ -262,6 +308,21 @@ def main():
     
     # 保存到Notion
     saver = NotionSaver()
+    
+    import re
+    note_id = None
+    # 小红书笔记ID通常是24位字母数字组合
+    match = re.search(r'/(?:item|explore)/([a-zA-Z0-9]{24})', data.get("url", ""))
+    if match:
+        note_id = match.group(1)
+        
+    if note_id:
+        print(f"正在检查 Notion 中是否已存在该笔记 (ID: {note_id})...")
+        duplicate_id = saver.check_duplicate(note_id)
+        if duplicate_id:
+            print(f"[SKIP] 该笔记已存在于Notion中，跳过保存 (页面ID: {duplicate_id})")
+            sys.exit(0)
+            
     success = saver.save_to_notion(data)
     
     if success:
