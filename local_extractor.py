@@ -146,11 +146,16 @@ class XiaohongshuExtractor:
                 if 'desc' in note_data:
                     result['content'] = note_data['desc']
                 
-                # 提取封面图
+                # 提取封面图（兼容视频和实况图）
+                # 小红书无论是视频还是图文，都会在 imageList 中提供静态的封面首图
                 if 'imageList' in note_data and note_data['imageList']:
                     img = note_data['imageList'][0]
                     # 优先使用 urlDefault 或 url
                     result['cover_url'] = img.get('urlDefault') or img.get('url') or img.get('urlPre')
+                # 兜底：如果是纯视频且未提取到图片列表，尝试从视频信息里提取封面
+                elif 'video' in note_data and note_data['video'] and 'image' in note_data['video']:
+                    video_cover = note_data['video']['image']
+                    result['cover_url'] = video_cover.get('thumbnail') or video_cover.get('url') or video_cover.get('urlDefault')
                 
                 print(f"从INITIAL_STATE提取成功: 标题={result.get('title', '')}, 作者={result.get('author', '')}, 标签数={len(result.get('tags', []))}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
         
