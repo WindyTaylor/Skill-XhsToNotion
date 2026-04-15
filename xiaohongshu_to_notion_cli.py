@@ -11,12 +11,32 @@ import requests
 import argparse
 from pathlib import Path
 
+# 强制将标准输出和错误输出配置为 UTF-8，防止 Windows 终端下出现包含 Emoji 时的 UnicodeEncodeError
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 # 添加父目录到路径，以便导入现有模块
 sys.path.append(str(Path(__file__).parent.parent))
 
 # ==========================================
-# 专辑路由功能已暂时移除，预留至下个版本开发
-# ALBUM_MAP = {}
+# 专辑路由映射字典 (动态从 album_map.json 加载)
+# ==========================================
+ALBUM_MAP = {}
+try:
+    album_map_path = Path(__file__).parent / "album_map.json"
+    if album_map_path.exists():
+        with open(album_map_path, "r", encoding="utf-8") as f:
+            ALBUM_MAP = json.load(f)
+    else:
+        # 提供默认的 fallback 结构
+        ALBUM_MAP = {
+            "待分类收件箱": "id_fallback"
+        }
+except Exception as e:
+    print(f"[WARN] 加载 album_map.json 失败: {e}")
+    ALBUM_MAP = {
+        "待分类收件箱": "id_fallback"
+    }
 # ==========================================
 
 class NotionSaver:
@@ -179,17 +199,17 @@ class NotionSaver:
                     ]
                 }
                 
-        # 暂时屏蔽调用智能路由分类功能，留至下一版本
-        # album_name = data.get("album")
-        # if not album_name:
-        #     album_name = "待分类收件箱"
-        # album_id = ALBUM_MAP.get(album_name, ALBUM_MAP.get("待分类收件箱", "id_fallback"))
-        # if album_id and album_id != "id_fallback":
-        #     page_data["properties"]["库B：专辑标签库"] = {
-        #         "relation": [
-        #             {"id": album_id}
-        #         ]
-        #     }
+        # 调用智能路由分类功能
+        album_name = data.get("album")
+        if not album_name:
+            album_name = "待分类收件箱"
+        album_id = ALBUM_MAP.get(album_name, ALBUM_MAP.get("待分类收件箱", "id_fallback"))
+        if album_id and album_id != "id_fallback":
+            page_data["properties"]["库B：专辑标签库"] = {
+                "relation": [
+                    {"id": album_id}
+                ]
+            }
                 
         # 添加封面图片
         if data.get("cover"):
@@ -322,6 +342,58 @@ class NotionSaver:
             print(f"[FAIL] 追加野生标签请求异常: {e}")
             return False
 
+    def update_album(self, page_id, album_name):
+        """为已存在的Notion页面更新专辑（Relation属性）"""
+        # 兼容处理未分类收件箱
+        if album_name == "未分类收件箱" or not album_name:
+            album_name = "待分类收件箱"
+            
+        album_id = ALBUM_MAP.get(album_name, ALBUM_MAP.get("待分类收件箱", "id_fallback"))
+        
+        if not album_id or album_id == "id_fallback":
+            print(f"[FAIL] 找不到专辑 '{album_name}' 的映射 ID。")
+            return False
+            
+        import requests
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        headers = {
+            "Authorization": f"Bearer {self.notion_api_key}",
+            "Notion-Version": self.notion_version,
+            "Content-Type": "application/json"
+        }
+        
+        update_payload = {
+            "properties": {
+                "库B：专辑标签库": {
+                    "relation": [
+                        {"id": album_id}
+                    ]
+                }
+            }
+        }
+        
+        try:
+            patch_resp = requests.patch(
+                f"https://api.notion.com/v1/pages/{page_id}", 
+                headers=headers, 
+                json=update_payload, 
+                verify=False, 
+                timeout=15
+            )
+            
+            if patch_resp.status_code == 200:
+                print(f"[OK] 成功更新专辑为: {album_name}")
+                return True
+            else:
+                print(f"[FAIL] 更新专辑失败: {patch_resp.text}")
+                return False
+                
+        except Exception as e:
+            print(f"[FAIL] 更新专辑请求异常: {e}")
+            return False
+
 def main():
     parser = argparse.ArgumentParser(description='保存小红书笔记到Notion')
     parser.add_argument('--url', help='小红书链接 (可选，也可从文件读取)')
@@ -331,6 +403,7 @@ def main():
     parser.add_argument('--tags', help='标签（逗号分隔）')
     parser.add_argument('--cover', help='封面图片URL')
     parser.add_argument('--append-tags', help='追加标签（逗号分隔），将应用到最近一次保存的笔记上')
+    parser.add_argument('--update-album', help='更新专辑名称，将应用到最近一次保存的笔记上')
     parser.add_argument('--album', help='归属专辑名称，用于Notion中的Relation关联')
     
     args = parser.parse_args()
@@ -348,6 +421,21 @@ def main():
         saver = NotionSaver()
         print(f"正在为笔记(ID: {page_id})追加标签...")
         success = saver.append_tags(page_id, args.append_tags)
+        sys.exit(0 if success else 1)
+        
+    # 如果是更新专辑的指令
+    if args.update_album:
+        last_id_file = Path(__file__).parent / "last_page_id.txt"
+        if not last_id_file.exists():
+            print("[FAIL] 找不到最近保存的笔记记录，无法更新专辑。")
+            sys.exit(1)
+        
+        with open(last_id_file, "r", encoding="utf-8") as f:
+            page_id = f.read().strip()
+            
+        saver = NotionSaver()
+        print(f"正在为笔记(ID: {page_id})更新专辑为: {args.update_album}...")
+        success = saver.update_album(page_id, args.update_album)
         sys.exit(0 if success else 1)
         
     # 如果从文件中读取 URL
