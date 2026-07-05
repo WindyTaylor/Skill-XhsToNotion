@@ -45,8 +45,8 @@
 #### 4. 环境验证已完成
 - **Notion API验证成功**：使用curl测试API连接正常
 - **凭证确认**：
-  - Notion API Key: `ntn_u3940930740492DuwPRRfsWKq3vhLzVLY9B14K8S0iC1Wh`
-  - Database ID: `33e0eae5d4b48036abaad89b2e97fa73`
+  - Notion API Key: 已迁移到本地私密配置，文档不再记录明文密钥
+  - Database ID: 已迁移到本地私密配置
 
 ### ⚠️ 当前问题
 

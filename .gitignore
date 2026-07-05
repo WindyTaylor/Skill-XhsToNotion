@@ -5,6 +5,10 @@ __pycache__/
 *.pyd
 node_modules/
 
+# Local credentials
+program/config.json
+config.json
+
 # Runtime and test outputs
 *.log
 debug_html/

@@ -18,7 +18,7 @@ description: "提取小红书笔记的标题、链接、作者、标签、简介
 2. **凭据安全**：不得使用硬编码凭证。脚本需通过环境变量 `NOTION_API_KEY` 和 `NOTION_DATABASE_ID` 获取验证信息。
 3. **执行流程**：
    - 助手提取用户提供的小红书 URL。
-   - 调用 `xiaohongshu_to_notion_cli.py` 脚本，仅需传入 URL。
+   - 调用 `program/xiaohongshu_to_notion_cli.py` 脚本，仅需传入 URL。
    - 脚本内部将自动打开网页、抓取页面信息（标题、链接、作者、标签、简介、封面），并将其一键保存到 Notion 数据库。
 
 ### 执行命令示例
@@ -26,7 +26,7 @@ description: "提取小红书笔记的标题、链接、作者、标签、简介
 当用户发送一个小红书链接时，助手直接执行：
 
 ```bash
-python xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/explore/..."
+python program/xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/explore/..."
 ```
 
 *如果用户明确给出了特定的标题或简介，你可以作为可选参数追加（如 `--title "..."`），否则只需提供 `--url`，脚本会自动提取剩余内容。*
