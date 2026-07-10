@@ -49,6 +49,13 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         if path == "/api/notes":
             self.handle_api(lambda: self.manager.query_notes(query))
             return
+        if path == "/api/debug/cover":
+            try:
+                limit = int(query.get("limit", "3"))
+            except ValueError:
+                limit = 3
+            self.handle_api(lambda: {"pages": self.manager.debug_first_page_cover(limit=limit)})
+            return
         self.serve_static(path)
 
     def do_POST(self):

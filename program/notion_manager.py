@@ -132,6 +132,22 @@ def read_url(prop):
     return prop.get("url") or ""
 
 
+def read_cover_url(page):
+    """Extract the cover image URL from a Notion page payload.
+
+    Notion returns page.cover as either an external URL or an uploaded file
+    with a temporary Notion-hosted URL. The frontend uses this as the card
+    preview image in the gallery view.
+    """
+    cover = page.get("cover") or {}
+    cover_type = cover.get("type")
+    if cover_type == "external":
+        return (cover.get("external") or {}).get("url") or ""
+    if cover_type == "file":
+        return (cover.get("file") or {}).get("url") or ""
+    return ""
+
+
 def read_status(prop):
     status = prop.get("select") or {}
     return status.get("name") or ""
@@ -186,6 +202,43 @@ class NotionNoteManager:
             {"name": name, "id": album_id}
             for name, album_id in sorted(self.album_map.items(), key=lambda item: item[0])
         ]
+
+    def fetch_cover_for_page(self, page_id):
+        """Fetch a single page and return its cover URL.
+
+        Notion's database query endpoint does not always include the `cover`
+        field in the response payload, even when the page has a cover set in
+        the UI. The single-page GET endpoint reliably returns the full cover
+        object, so we use it as a fallback to enrich the gallery cards.
+        """
+        try:
+            page = self.get_page(page_id)
+        except NotionAPIError:
+            return ""
+        return read_cover_url(page)
+
+    def debug_first_page_cover(self, limit=3):
+        """Diagnostic helper: dump the raw cover field for the first N pages.
+
+        Notion's database query response may or may not include the full cover
+        object — in some API versions cover is only present on the detail
+        endpoint. This helper fetches the first few rows and returns the raw
+        cover payload so the frontend / user can confirm what Notion returned.
+        """
+        data = self.request(
+            "POST",
+            self.get_query_url(),
+            json={"page_size": limit},
+        )
+        results = []
+        for page in data.get("results", []):
+            results.append({
+                "id": page.get("id"),
+                "title": read_title(page.get("properties", {}).get(TITLE_PROP, {})),
+                "cover_raw": page.get("cover"),
+                "cover_extracted": read_cover_url(page),
+            })
+        return results
 
     def get_query_url(self):
         """Return the correct query endpoint for the configured Notion database.
@@ -284,6 +337,8 @@ class NotionNoteManager:
 
             for page in results:
                 note = self.page_to_note(page)
+                if not note.get("cover"):
+                    note["cover"] = self.fetch_cover_for_page(note["id"])
                 if self.matches_filters(note, filters):
                     notes.append(note)
                     if len(notes) >= limit:
@@ -313,6 +368,7 @@ class NotionNoteManager:
             "id": page.get("id"),
             "title": read_title(props.get(TITLE_PROP, {})),
             "url": read_url(props.get(URL_PROP, {})),
+            "cover": read_cover_url(page),
             "summary": read_rich_text(props.get(SUMMARY_PROP, {})),
             "author": read_rich_text(props.get(AUTHOR_PROP, {})),
             "tags": read_rich_text(props.get(TAGS_PROP, {})),
