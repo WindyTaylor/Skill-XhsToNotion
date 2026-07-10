@@ -10,10 +10,9 @@ const el = {
   refreshButton: document.querySelector("#refreshButton"),
   searchButton: document.querySelector("#searchButton"),
   addAlbumButton: document.querySelector("#addAlbumButton"),
-  selectAllCheckbox: document.querySelector("#selectAllCheckbox"),
   selectedCount: document.querySelector("#selectedCount"),
   message: document.querySelector("#message"),
-  notesBody: document.querySelector("#notesBody"),
+  notesGrid: document.querySelector("#notesGrid"),
   emptyState: document.querySelector("#emptyState"),
   searchInput: document.querySelector("#searchInput"),
   titleInput: document.querySelector("#titleInput"),
@@ -43,7 +42,7 @@ async function requestJson(url, options = {}) {
 
 function populateAlbumSelects() {
   const filterOptions = ['<option value="">全部</option>'];
-  const targetOptions = ['<option value="">选择专辑</option>'];
+  const targetOptions = ['<option value="">选择目标专辑</option>'];
 
   for (const album of state.albums) {
     const safeName = escapeHtml(album.name);
@@ -109,54 +108,81 @@ async function loadNotes() {
 }
 
 function renderNotes() {
-  el.notesBody.innerHTML = state.notes.map(renderNoteRow).join("");
+  el.notesGrid.innerHTML = state.notes.map(renderCard).join("");
   el.emptyState.classList.toggle("is-visible", state.notes.length === 0);
 
-  el.notesBody.querySelectorAll("input[data-page-id]").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        state.selectedIds.add(checkbox.dataset.pageId);
-      } else {
-        state.selectedIds.delete(checkbox.dataset.pageId);
-      }
-      updateSelection();
+  el.notesGrid.querySelectorAll(".card").forEach((cardEl) => {
+    const pageId = cardEl.dataset.pageId;
+    const checkbox = cardEl.querySelector(".check");
+    if (!checkbox) return;
+    checkbox.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSelection(pageId, cardEl, checkbox);
+    });
+    cardEl.addEventListener("click", () => {
+      toggleSelection(pageId, cardEl, checkbox);
     });
   });
 }
 
-function renderNoteRow(note) {
+function toggleSelection(pageId, cardEl, checkbox) {
+  if (!pageId) return;
+  if (state.selectedIds.has(pageId)) {
+    state.selectedIds.delete(pageId);
+    cardEl.classList.remove("is-selected");
+    checkbox.checked = false;
+  } else {
+    state.selectedIds.add(pageId);
+    cardEl.classList.add("is-selected");
+    checkbox.checked = true;
+  }
+  updateSelection();
+}
+
+function renderCard(note) {
   const title = note.title || "未命名笔记";
-  const notionUrl = note.notion_url || "#";
   const sourceUrl = note.url || "";
-  const summary = truncate(note.summary || "", 110);
-  const checked = state.selectedIds.has(note.id) ? "checked" : "";
+  const notionUrl = note.notion_url || "#";
+  const cover = note.cover || "";
+  const isSelected = state.selectedIds.has(note.id);
+  const status = note.status || "";
+  const statusClass = status ? "" : "is-empty";
+
+  const tagChips = renderChips(splitTags(note.tags), "tag");
+  const albumChips = renderChips(note.albums || [], "tag is-album");
+
+  const coverHtml = cover
+    ? `<img class="cover-img" src="${escapeAttr(cover)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="this.classList.add('is-failed')" />`
+    : '<div class="cover-fallback">无封面</div>';
 
   return `
-    <tr>
-      <td class="select-cell">
-        <input type="checkbox" data-page-id="${escapeHtml(note.id)}" ${checked} aria-label="选择笔记" />
-      </td>
-      <td>
-        <a class="note-title" href="${escapeHtml(notionUrl)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a>
-        ${summary ? `<div class="summary">${escapeHtml(summary)}</div>` : ""}
-      </td>
-      <td>${escapeHtml(note.author || "")}</td>
-      <td>${renderChips(splitTags(note.tags))}</td>
-      <td>${renderChips(note.albums || [])}</td>
-      <td>${escapeHtml(note.status || "")}</td>
-      <td>
-        <div class="link-group">
-          ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">原文</a>` : ""}
-          ${notionUrl ? `<a href="${escapeHtml(notionUrl)}" target="_blank" rel="noreferrer">Notion</a>` : ""}
+    <article class="card ${isSelected ? "is-selected" : ""}" data-page-id="${escapeHtml(note.id)}">
+      <div class="cover">
+        ${coverHtml}
+        <input type="checkbox" class="check" ${isSelected ? "checked" : ""} aria-label="选择笔记" />
+      </div>
+      <div class="body">
+        <div class="title">${escapeHtml(title)}</div>
+        ${note.author ? `<div class="author">${escapeHtml(note.author)}</div>` : ""}
+        ${tagChips}
+        ${albumChips}
+        <div class="foot">
+          <span class="status ${statusClass}">${escapeHtml(status || "无状态")}</span>
+          <span class="links">
+            ${sourceUrl ? `<a href="${escapeAttr(sourceUrl)}" target="_blank" rel="noreferrer">原文</a>` : ""}
+            <a href="${escapeAttr(notionUrl)}" target="_blank" rel="noreferrer">Notion</a>
+          </span>
         </div>
-      </td>
-    </tr>
+      </div>
+    </article>
   `;
 }
 
-function renderChips(items) {
+function renderChips(items, className = "tag") {
   if (!items.length) return "";
-  return `<div class="chip-list">${items.map((item) => `<span class="chip">${escapeHtml(item)}</span>`).join("")}</div>`;
+  return `<div class="tag-list">${items
+    .map((item) => `<span class="${className}">${escapeHtml(item)}</span>`)
+    .join("")}</div>`;
 }
 
 function splitTags(tags) {
@@ -169,14 +195,9 @@ function splitTags(tags) {
 }
 
 function updateSelection() {
-  const selected = state.selectedIds.size;
-  el.selectedCount.textContent = selected;
-  el.addAlbumButton.disabled = selected === 0 || !el.targetAlbumSelect.value;
-
-  const visibleIds = state.notes.map((note) => note.id);
-  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => state.selectedIds.has(id));
-  el.selectAllCheckbox.checked = allSelected;
-  el.selectAllCheckbox.indeterminate = !allSelected && visibleIds.some((id) => state.selectedIds.has(id));
+  el.selectedCount.textContent = state.selectedIds.size;
+  el.addAlbumButton.disabled =
+    state.selectedIds.size === 0 || !el.targetAlbumSelect.value;
 }
 
 async function addSelectedToAlbum() {
@@ -215,6 +236,10 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
 function truncate(value, length) {
   return value.length > length ? `${value.slice(0, length)}...` : value;
 }
@@ -224,18 +249,6 @@ function bindEvents() {
   el.refreshButton.addEventListener("click", loadNotes);
   el.addAlbumButton.addEventListener("click", addSelectedToAlbum);
   el.targetAlbumSelect.addEventListener("change", updateSelection);
-
-  el.selectAllCheckbox.addEventListener("change", () => {
-    for (const note of state.notes) {
-      if (el.selectAllCheckbox.checked) {
-        state.selectedIds.add(note.id);
-      } else {
-        state.selectedIds.delete(note.id);
-      }
-    }
-    renderNotes();
-    updateSelection();
-  });
 
   for (const input of [el.searchInput, el.titleInput, el.authorInput, el.tagInput]) {
     input.addEventListener("keydown", (event) => {
