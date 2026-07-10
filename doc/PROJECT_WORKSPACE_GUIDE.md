@@ -1,6 +1,6 @@
 # Project Workspace Guide
 
-Updated: 2026-07-05
+Updated: 2026-07-10
 
 This file is the required entrypoint for future work in this project. Read it before inspecting or editing other project files.
 
@@ -23,6 +23,7 @@ This file is the required entrypoint for future work in this project. Read it be
 4. Keep local credentials out of commits. `program/config.json` is private runtime configuration; use `program/config_template.json` for examples.
 5. When changing Notion fields, update `program/README.md`, `program/SKILL.md`, and any affected docs together.
 6. Do not enter `.git`, `__pycache__`, or generated output folders for ordinary feature work.
+7. When implementing the Notion embedded search/management console, read `doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md` before editing code.
 
 ## Naming Notes
 

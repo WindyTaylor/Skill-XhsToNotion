@@ -13,6 +13,7 @@
 - 未配置 DeepSeek 或调用失败时，自动退回本地关键词规则兜底分类。
 - 支持保存后追加野生标签、更新归属专辑、按最近一次候选序号改选专辑。
 - 支持从 Notion 专辑库刷新 `album_map.json`。
+- 提供本地嵌入式收藏管理台，可搜索、过滤、多选笔记并批量追加到新专辑。
 - 可作为 Codex/OpenClaw skill 使用，适合接收 QQ 小红书卡片中的完整 `jump_url`。
 
 ## 目录结构
@@ -23,11 +24,14 @@
 │   ├── xiaohongshu_to_notion_cli.py  # 主入口：提取、查重、保存、追加标签、更新专辑
 │   ├── local_extractor.py            # 小红书页面提取器
 │   ├── update_album_map.py           # 从 Notion 刷新专辑 Relation 映射
+│   ├── notion_manager.py             # 收藏管理台的 Notion 查询与批量更新逻辑
+│   ├── manage_server.py              # 本地 Web 收藏管理台服务
 │   ├── configure.py                  # 写入本地配置
 │   ├── config_template.json          # 配置模板
 │   ├── album_map.json                # 专辑名到 Notion page id 的映射
 │   ├── album_descriptions.json       # 专辑语义描述，供 LLM 分类参考
 │   ├── SKILL.md                      # Codex/OpenClaw skill 说明
+│   ├── web/                          # 嵌入式收藏管理台前端
 │   └── README.md                     # program 目录详细说明
 ├── references/                       # Edge 扩展和历史触发脚本参考
 ├── doc/                              # 配置、状态、项目说明等文档
@@ -87,7 +91,10 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 | --- | --- | --- |
 | `NOTION_API_KEY` | 是 | Notion integration token |
 | `NOTION_DATABASE_ID` | 是 | Notion 内容总库 database id |
+| `NOTION_DATA_SOURCE_ID` | 否 | Notion 新版 data source id；留空时管理台会自动从 database 解析 |
 | `NOTION_VERSION` | 否 | Notion API 版本，模板默认 `2025-09-03` |
+| `NOTION_TIMEOUT` | 否 | Notion API 请求超时秒数，模板默认 `15` |
+| `NOTION_VERIFY_SSL` | 否 | 是否校验 SSL 证书，模板默认 `false` 以兼容本地网络问题 |
 | `DEEPSEEK_API_KEY` | 否 | 用于 LLM 专辑推理 |
 | `DEEPSEEK_BASE_URL` | 否 | 默认 `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | 否 | 默认 `deepseek-chat` |
@@ -153,6 +160,22 @@ python program/xiaohongshu_to_notion_cli.py `
 python program/update_album_map.py
 ```
 
+启动本地收藏管理台：
+
+```powershell
+python program/manage_server.py
+```
+
+默认地址：
+
+```text
+http://127.0.0.1:8765
+```
+
+管理台支持搜索标题、简介、作者、野生标签，按状态和专辑过滤，多选结果后追加到目标专辑。追加专辑会保留原有专辑 Relation，不会覆盖原分类。
+
+如需放入 Notion 页面，可在 Notion 中创建页面后使用 `/embed` 嵌入上述地址。若 Notion 客户端无法嵌入本地地址，先直接用浏览器打开管理台。
+
 ## QQ 卡片与 Skill 使用注意
 
 当 Codex/OpenClaw 从 QQ 收到小红书卡片时，应使用卡片中的完整 `jump_url`，不要删掉 query 参数。尤其需要保留：
@@ -171,6 +194,8 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 - `program/last_album_candidates.json`：记录最近一次自动分类生成的专辑候选，供数字改选专辑使用。
 - `program/album_map.json`：专辑名到 Notion Relation page id 的映射。
 - `program/album_descriptions.json`：专辑语义描述，用于提升 DeepSeek 专辑推理准确度。
+- `program/manage_server.py`：本地收藏管理台入口，默认只监听 `127.0.0.1`。
+- `program/notion_manager.py`：收藏管理台后端逻辑，负责查询、过滤和批量追加专辑。
 
 ## 维护说明
 
@@ -179,6 +204,7 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 - Notion 字段发生变化时，需要同步更新 `program/README.md`、`program/SKILL.md` 和本 README。
 - `references/4.edge_with_notion` 使用另一套 Notion 字段名，与当前 Python CLI 不完全兼容，合并两条路线前需要先统一 schema。
 - 当前代码中为了处理本地网络或证书问题，Notion 请求存在 `verify=False` 的开发期写法；长期使用时建议改为正常证书校验或明确代理配置。
+- 收藏管理台不会把 Notion token 写入前端页面；token 只从本地配置或环境变量进入后端进程。
 
 ## 相关文档
 
@@ -186,3 +212,4 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 - [program/SKILL.md](program/SKILL.md)：Codex/OpenClaw skill 调用规则。
 - [doc/PROJECT_SUMMARY.md](doc/PROJECT_SUMMARY.md)：项目路线和当前状态总结。
 - [doc/PROJECT_WORKSPACE_GUIDE.md](doc/PROJECT_WORKSPACE_GUIDE.md)：目录用途和后续协作规则。
+- [doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md](doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md)：Notion 嵌入式搜索管理台实现指引。

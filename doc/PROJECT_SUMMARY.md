@@ -1,6 +1,6 @@
 # 小红书转 Notion 项目总结
 
-Updated: 2026-07-05
+Updated: 2026-07-10
 
 ## 项目目标
 
@@ -33,6 +33,18 @@ Updated: 2026-07-05
 - `--update-album`：给最近页面更新归属专辑。
 - `program/update_album_map.py`：从 Notion 专辑 Relation 子库刷新 `program/album_map.json`。
 - `program/configure.py`：写入本地 Notion token 和数据库 ID。
+
+## 收藏管理台
+
+2026-07-10 新增本地 Web 收藏管理台路线，用于把项目从“保存小红书笔记”推进到“管理小红书收藏”。
+
+核心文件：
+
+- `program/notion_manager.py`：查询 Notion 内容总库、按标题/作者/标签/状态/专辑过滤、批量追加专辑 Relation。
+- `program/manage_server.py`：本地 HTTP 服务，默认监听 `http://127.0.0.1:8765`。
+- `program/web/`：管理台前端，包含搜索框、过滤器、结果表格、多选和追加到专辑操作。
+
+该功能遵循 `doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md`：第一版只实现“追加到专辑”，保留原有 Relation，不做覆盖式移动。
 
 ## Notion Schema
 

@@ -13,6 +13,7 @@ The active implementation lives in `program`. The Edge extension under `referenc
 - Fall back to local keyword-based album matching when DeepSeek is unavailable.
 - Append tags, update the album, or select an album from the latest candidate list after saving.
 - Refresh album mappings from the Notion album database.
+- Run a local embedded management console to search, filter, select notes, and append them to another album.
 - Work as a Codex/OpenClaw skill for QQ Xiaohongshu card links.
 
 ## Project Layout
@@ -23,11 +24,14 @@ The active implementation lives in `program`. The Edge extension under `referenc
 │   ├── xiaohongshu_to_notion_cli.py  # Main CLI entrypoint
 │   ├── local_extractor.py            # Xiaohongshu page extractor
 │   ├── update_album_map.py           # Refresh Notion album relation mapping
+│   ├── notion_manager.py             # Notion query and batch update logic for the console
+│   ├── manage_server.py              # Local web management console server
 │   ├── configure.py                  # Local configuration helper
 │   ├── config_template.json          # Configuration template
 │   ├── album_map.json                # Album name to Notion page id mapping
 │   ├── album_descriptions.json       # Album descriptions for LLM routing
 │   ├── SKILL.md                      # Codex/OpenClaw skill instructions
+│   ├── web/                          # Embedded management console frontend
 │   └── README.md                     # Detailed Chinese documentation
 ├── references/                       # Edge extension and historical scripts
 ├── doc/                              # Project notes and setup docs
@@ -71,7 +75,10 @@ Supported configuration keys:
 | --- | --- | --- |
 | `NOTION_API_KEY` | Yes | Notion integration token |
 | `NOTION_DATABASE_ID` | Yes | Notion content database id |
+| `NOTION_DATA_SOURCE_ID` | No | Notion data source id; leave blank and the console will resolve it from the database |
 | `NOTION_VERSION` | No | Notion API version, default in template: `2025-09-03` |
+| `NOTION_TIMEOUT` | No | Notion API timeout in seconds, default in template: `15` |
+| `NOTION_VERIFY_SSL` | No | Whether to verify SSL certificates, default in template: `false` for local network compatibility |
 | `DEEPSEEK_API_KEY` | No | Enables LLM album routing |
 | `DEEPSEEK_BASE_URL` | No | Default: `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | No | Default: `deepseek-chat` |
@@ -135,6 +142,20 @@ Refresh album mapping from Notion:
 python program/update_album_map.py
 ```
 
+Start the local management console:
+
+```powershell
+python program/manage_server.py
+```
+
+Default URL:
+
+```text
+http://127.0.0.1:8765
+```
+
+The console can search title, summary, author, and tags, filter by status and album, select multiple notes, and append them to a target album. Appending keeps existing album relations instead of replacing them.
+
 ## QQ Card Notes
 
 When the skill receives a Xiaohongshu QQ card, pass the full `jump_url` to the CLI. Do not strip query parameters such as `xsec_token`, `xsec_source`, `share_id`, `share_channel`, or `xhsshare`.
@@ -147,3 +168,4 @@ QQ card preview fields such as `title`, `desc`, and `tag` may be truncated. Use 
 - [program/SKILL.md](program/SKILL.md): Codex/OpenClaw skill invocation rules.
 - [doc/PROJECT_SUMMARY.md](doc/PROJECT_SUMMARY.md): project route and current status.
 - [doc/PROJECT_WORKSPACE_GUIDE.md](doc/PROJECT_WORKSPACE_GUIDE.md): workspace rules for future work.
+- [doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md](doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md): implementation guide for the embedded Notion management console.

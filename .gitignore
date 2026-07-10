@@ -139,6 +139,9 @@ extracted_results/
 results/
 simple_results/
 
+# Workspace memory (project-local, not for git)
+.workbuddy/
+
 # Temporary
 .DS_Store
 *.swp

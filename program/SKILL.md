@@ -16,6 +16,7 @@ metadata: {"clawdbot":{"emoji":"📱→📝","requires":{"env":["NOTION_API_KEY"
 - 用户要求把最近保存的小红书笔记更新到指定专辑。
 - 用户要求描述、补充、修改某个专辑的用途或收录范围，供后续 LLM 专辑推理参考。
 - 用户要求刷新 Notion 专辑映射。
+- 用户要求打开或启动小红书收藏管理台，用于搜索、过滤、多选笔记并批量追加到专辑。
 
 ## 工作流程
 
@@ -107,6 +108,20 @@ python xiaohongshu_to_notion_cli.py --describe-album "积累拍照灵感" --albu
 python update_album_map.py
 ```
 
+启动本地收藏管理台：
+
+```powershell
+python manage_server.py
+```
+
+默认地址：
+
+```text
+http://127.0.0.1:8765
+```
+
+收藏管理台用于在浏览器或 Notion embed 中搜索内容总库，按标题、作者、野生标签、状态和专辑过滤，多选笔记后追加到目标专辑。追加专辑必须保留原有 Relation，不要改成覆盖式移动。
+
 ## 配置
 
 优先使用 `program/config.json`，也支持环境变量兜底。
@@ -144,6 +159,7 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 
 - 页面提取逻辑集中在 `local_extractor.py`。
 - Notion 保存、查重、DeepSeek 专辑推理、追加标签、更新专辑和专辑描述维护集中在 `xiaohongshu_to_notion_cli.py`。
+- 收藏管理台后端集中在 `notion_manager.py` 和 `manage_server.py`，前端集中在 `web/`。
 - 专辑映射来自 `album_map.json`，可用 `update_album_map.py` 重新生成。
 - 专辑语义描述来自 `album_descriptions.json`，由 `--describe-album` / `--album-description` 更新，供 DeepSeek 推理参考。
 - Edge 扩展实现已放入 `references/4.edge_with_notion`，作为批量抓取参考，不是当前主开发路线。

@@ -11,6 +11,7 @@
 - 支持对最近一次保存的页面追加野生标签。
 - 支持对最近一次保存的页面更新归属专辑。
 - 支持从 Notion 关联专辑库刷新 `album_map.json`。
+- 支持启动本地收藏管理台，在浏览器或 Notion embed 中搜索、过滤、多选并批量追加到新专辑。
 
 ## 文件说明
 
@@ -25,6 +26,9 @@
 | `album_map.json` | 专辑名到 Notion relation page id 的映射 |
 | `album_descriptions.json` | 专辑名到语义描述的映射，供 DeepSeek 推理参考 |
 | `update_album_map.py` | 从 Notion 数据库刷新专辑映射 |
+| `notion_manager.py` | 收藏管理台后端核心，负责查询、过滤和追加专辑 Relation |
+| `manage_server.py` | 本地 Web 收藏管理台服务入口 |
+| `web/` | 收藏管理台前端页面、样式和交互脚本 |
 | `last_page_id.txt` | 最近一次保存或命中的 Notion 页面 ID |
 
 ## Notion 数据库要求
@@ -60,9 +64,11 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 
 `program/config.json` 包含私密凭据，不应提交到 Git。
 
-DeepSeek 专辑推理使用 OpenAI-compatible 接口，默认配置为：
+可选配置默认值：
 
 ```text
+NOTION_TIMEOUT=15
+NOTION_VERIFY_SSL=false
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 ```
@@ -120,8 +126,32 @@ python program/xiaohongshu_to_notion_cli.py `
 python program/update_album_map.py
 ```
 
+启动收藏管理台：
+
+```powershell
+python program/manage_server.py
+```
+
+默认访问地址：
+
+```text
+http://127.0.0.1:8765
+```
+
+管理台支持：
+
+- 搜索标题、简介、作者和野生标签。
+- 按标题、作者、标签、状态、当前专辑过滤。
+- 多选当前结果。
+- 选择目标专辑并批量追加。
+
+批量追加使用“保留原专辑 + 追加目标专辑”的 Relation 更新方式，不会覆盖已有专辑。
+
+如果要在 Notion 里使用，可新建 `小红书收藏管理台` 页面并用 `/embed` 嵌入本地地址。若 Notion 客户端无法访问 `127.0.0.1`，先在浏览器中直接打开。
+
 ## 注意事项
 
 - 小红书页面结构可能变化，提取失败时优先检查 `local_extractor.py`。
 - 当前代码中为了处理本地网络/证书问题，Notion 请求存在 `verify=False` 的开发期写法；如需长期稳定使用，后续应改为正常证书校验或明确代理配置。
 - `references/4.edge_with_notion` 使用另一套 Notion 字段名，与 Python CLI 并不完全兼容，修改前先对齐目标数据库 schema。
+- 收藏管理台默认只监听 `127.0.0.1`，不要在公网环境暴露未加认证的服务。

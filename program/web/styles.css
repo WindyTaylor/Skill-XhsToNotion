@@ -1,0 +1,302 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f4ef;
+  --panel: #ffffff;
+  --panel-soft: #fbfaf7;
+  --ink: #24231f;
+  --muted: #6e6a61;
+  --line: #ddd7cb;
+  --accent: #2e7d6f;
+  --accent-strong: #1d5f55;
+  --danger: #a33a2f;
+  --shadow: 0 1px 2px rgba(44, 37, 24, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.topbar,
+.toolbar,
+.bulkbar,
+.table-wrap {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 8px 8px 0 0;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.topbar p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
+
+.toolbar,
+.bulkbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(5, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px 16px;
+  border-top: 0;
+}
+
+.bulkbar {
+  grid-template-columns: auto minmax(220px, 320px) auto 1fr;
+  align-items: center;
+  background: var(--panel-soft);
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+input,
+select {
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(46, 125, 111, 0.14);
+}
+
+.primary-button,
+.icon-button {
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.primary-button {
+  min-width: 96px;
+  padding: 0 14px;
+  font-weight: 600;
+}
+
+.icon-button {
+  width: 36px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.primary-button:hover,
+.icon-button:hover {
+  background: var(--accent-strong);
+}
+
+.primary-button:disabled {
+  cursor: not-allowed;
+  background: #b8b2a6;
+}
+
+.selection-count {
+  min-width: 86px;
+  color: var(--muted);
+}
+
+.selection-count strong {
+  color: var(--ink);
+}
+
+.message {
+  min-height: 36px;
+  padding: 8px 16px;
+  color: var(--muted);
+}
+
+.message.is-error {
+  color: var(--danger);
+}
+
+.message.is-success {
+  color: var(--accent-strong);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 0 0 8px 8px;
+}
+
+table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: #eee9df;
+  color: #4d493f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+tr:hover td {
+  background: #fbfaf6;
+}
+
+.select-cell {
+  width: 42px;
+  text-align: center;
+}
+
+.note-title {
+  display: block;
+  max-width: 360px;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.note-title:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.summary {
+  max-width: 420px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chip-list {
+  display: flex;
+  max-width: 260px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid #d4cab8;
+  border-radius: 999px;
+  background: #f5f0e8;
+  color: #4d493f;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.link-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.link-group a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.link-group a:hover {
+  text-decoration: underline;
+}
+
+.empty-state {
+  display: none;
+  padding: 36px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state.is-visible {
+  display: block;
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    padding: 10px;
+  }
+
+  .toolbar,
+  .bulkbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .search-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .toolbar,
+  .bulkbar {
+    grid-template-columns: 1fr;
+  }
+
+  .primary-button,
+  .icon-button {
+    width: 100%;
+  }
+}

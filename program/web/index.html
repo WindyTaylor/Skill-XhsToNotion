@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>小红书收藏管理台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>小红书收藏管理台</h1>
+          <p id="resultMeta">正在连接 Notion...</p>
+        </div>
+        <button id="refreshButton" class="icon-button" type="button" title="刷新">⟳</button>
+      </header>
+
+      <section class="toolbar" aria-label="搜索过滤">
+        <label class="search-field">
+          <span>搜索</span>
+          <input id="searchInput" type="search" placeholder="标题、简介、作者、标签" autocomplete="off" />
+        </label>
+        <label>
+          <span>标题</span>
+          <input id="titleInput" type="text" autocomplete="off" />
+        </label>
+        <label>
+          <span>作者</span>
+          <input id="authorInput" type="text" autocomplete="off" />
+        </label>
+        <label>
+          <span>标签</span>
+          <input id="tagInput" type="text" autocomplete="off" />
+        </label>
+        <label>
+          <span>状态</span>
+          <select id="statusSelect">
+            <option value="">全部</option>
+            <option value="待阅读">待阅读</option>
+            <option value="已阅读">已阅读</option>
+            <option value="已整理">已整理</option>
+            <option value="已实践">已实践</option>
+            <option value="已废弃">已废弃</option>
+            <option value="长期参考">长期参考</option>
+          </select>
+        </label>
+        <label>
+          <span>专辑</span>
+          <select id="albumFilterSelect">
+            <option value="">全部</option>
+          </select>
+        </label>
+        <button id="searchButton" class="primary-button" type="button">搜索</button>
+      </section>
+
+      <section class="bulkbar" aria-label="批量操作">
+        <div class="selection-count">已选 <strong id="selectedCount">0</strong> 篇</div>
+        <label>
+          <span>目标专辑</span>
+          <select id="targetAlbumSelect"></select>
+        </label>
+        <button id="addAlbumButton" class="primary-button" type="button" disabled>追加到专辑</button>
+      </section>
+
+      <div id="message" class="message" role="status" aria-live="polite"></div>
+
+      <section class="table-wrap" aria-label="搜索结果">
+        <table>
+          <thead>
+            <tr>
+              <th class="select-cell">
+                <input id="selectAllCheckbox" type="checkbox" aria-label="选择当前页" />
+              </th>
+              <th>标题</th>
+              <th>作者</th>
+              <th>标签</th>
+              <th>当前专辑</th>
+              <th>状态</th>
+              <th>链接</th>
+            </tr>
+          </thead>
+          <tbody id="notesBody"></tbody>
+        </table>
+        <div id="emptyState" class="empty-state">暂无结果</div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
