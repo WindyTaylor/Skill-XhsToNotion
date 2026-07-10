@@ -153,6 +153,7 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 - `作者`：Rich text
 - `状态`：Select，默认写入 `待阅读`
 - `野生标签`：Rich text
+- `彩色标签`：Multi-select，用于 Notion 画廊卡片展示；保存时从野生标签拆分写入
 - `库B：专辑标签库`：Relation
 
 ## 维护提示

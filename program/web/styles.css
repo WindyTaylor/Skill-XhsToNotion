@@ -31,6 +31,15 @@ body {
   line-height: 1.5;
 }
 
+body.has-custom-bg {
+  background-image:
+    linear-gradient(rgba(246, 244, 239, 0.76), rgba(246, 244, 239, 0.88)),
+    var(--custom-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
 button,
 input,
 select {
@@ -61,6 +70,14 @@ select {
   justify-content: space-between;
   gap: 12px;
   padding: 4px 4px 16px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .brand-row h1 {
@@ -136,8 +153,31 @@ select {
   cursor: pointer;
 }
 
-.icon-button:hover {
+.utility-button {
+  height: 36px;
+  padding: 0 12px;
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.icon-button:hover,
+.utility-button:hover {
   background: var(--panel-soft);
+}
+
+body.has-custom-bg .search-pill,
+body.has-custom-bg .chip,
+body.has-custom-bg .bulkbar,
+body.has-custom-bg .card,
+body.has-custom-bg .empty-state,
+body.has-custom-bg .utility-button,
+body.has-custom-bg .icon-button {
+  background-color: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
 }
 
 /* Compact filter chips */
@@ -492,6 +532,15 @@ select {
 
   .bulkbar {
     flex-wrap: wrap;
+  }
+
+  .brand-row {
+    flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .target-album {

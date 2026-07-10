@@ -24,7 +24,7 @@ Updated: 2026-07-10
 2. 当标题/简介缺失时，调用 `program/local_extractor.py` 抓取小红书页面。
 3. 从页面 `window.__INITIAL_STATE__` 中提取标题、作者、标签、正文和封面。
 4. 解析笔记 ID，并用 Notion 数据库中的 `小红书链接` 字段查重。
-5. 未重复时创建 Notion 页面，写入标题、链接、简介、作者、状态、野生标签、封面和专辑 Relation。
+5. 未重复时创建 Notion 页面，写入标题、链接、简介、作者、状态、野生标签、彩色标签、封面和专辑 Relation。
 6. 将保存或命中的 Notion 页面 ID 写入 `program/last_page_id.txt`。
 
 辅助能力：
@@ -58,6 +58,7 @@ Python CLI 当前使用的目标数据库字段：
 | `作者` | Rich text |
 | `状态` | Select |
 | `野生标签` | Rich text |
+| `彩色标签` | Multi-select |
 | `库B：专辑标签库` | Relation |
 
 ## 参考路线：Edge 扩展

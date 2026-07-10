@@ -14,7 +14,12 @@
           <h1>小红书收藏管理台</h1>
           <p id="resultMeta" class="muted">正在连接 Notion...</p>
         </div>
-        <button id="refreshButton" class="icon-button" type="button" title="刷新">⟳</button>
+        <div class="header-actions" aria-label="页面操作">
+          <input id="backgroundInput" class="sr-only" type="file" accept="image/*" />
+          <button id="backgroundButton" class="utility-button" type="button">上传背景</button>
+          <button id="clearBackgroundButton" class="utility-button" type="button">清除背景</button>
+          <button id="refreshButton" class="icon-button" type="button" title="刷新">⟳</button>
+        </div>
       </header>
 
       <section class="search-bar" aria-label="主搜索">

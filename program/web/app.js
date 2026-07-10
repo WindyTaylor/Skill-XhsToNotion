@@ -5,9 +5,15 @@ const state = {
   loading: false,
 };
 
+const BACKGROUND_STORAGE_KEY = "xhs-notion-console-background";
+const MAX_BACKGROUND_BYTES = 4 * 1024 * 1024;
+
 const el = {
   resultMeta: document.querySelector("#resultMeta"),
   refreshButton: document.querySelector("#refreshButton"),
+  backgroundInput: document.querySelector("#backgroundInput"),
+  backgroundButton: document.querySelector("#backgroundButton"),
+  clearBackgroundButton: document.querySelector("#clearBackgroundButton"),
   searchButton: document.querySelector("#searchButton"),
   addAlbumButton: document.querySelector("#addAlbumButton"),
   selectedCount: document.querySelector("#selectedCount"),
@@ -26,6 +32,57 @@ const el = {
 function setMessage(text, type = "") {
   el.message.textContent = text || "";
   el.message.className = `message${type ? ` is-${type}` : ""}`;
+}
+
+function applyBackground(dataUrl) {
+  if (!dataUrl) {
+    document.documentElement.style.removeProperty("--custom-bg-image");
+    document.body.classList.remove("has-custom-bg");
+    return;
+  }
+  document.documentElement.style.setProperty("--custom-bg-image", `url("${dataUrl}")`);
+  document.body.classList.add("has-custom-bg");
+}
+
+function loadSavedBackground() {
+  const saved = localStorage.getItem(BACKGROUND_STORAGE_KEY);
+  if (saved) applyBackground(saved);
+}
+
+function handleBackgroundUpload(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    setMessage("请选择图片文件。", "error");
+    return;
+  }
+  if (file.size > MAX_BACKGROUND_BYTES) {
+    setMessage("背景图片不能超过 4MB。", "error");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    const dataUrl = String(reader.result || "");
+    try {
+      localStorage.setItem(BACKGROUND_STORAGE_KEY, dataUrl);
+      applyBackground(dataUrl);
+      setMessage("背景已更新，仅保存在当前浏览器。", "success");
+    } catch (error) {
+      applyBackground(dataUrl);
+      setMessage("背景已临时应用，但浏览器本地存储空间不足，刷新后可能失效。", "error");
+    }
+  });
+  reader.addEventListener("error", () => {
+    setMessage("读取图片失败，请换一张图片重试。", "error");
+  });
+  reader.readAsDataURL(file);
+}
+
+function clearBackground() {
+  localStorage.removeItem(BACKGROUND_STORAGE_KEY);
+  applyBackground("");
+  if (el.backgroundInput) el.backgroundInput.value = "";
+  setMessage("背景已清除。", "success");
 }
 
 async function requestJson(url, options = {}) {
@@ -249,6 +306,11 @@ function bindEvents() {
   el.refreshButton.addEventListener("click", loadNotes);
   el.addAlbumButton.addEventListener("click", addSelectedToAlbum);
   el.targetAlbumSelect.addEventListener("change", updateSelection);
+  el.backgroundButton.addEventListener("click", () => el.backgroundInput.click());
+  el.clearBackgroundButton.addEventListener("click", clearBackground);
+  el.backgroundInput.addEventListener("change", () => {
+    handleBackgroundUpload(el.backgroundInput.files?.[0]);
+  });
 
   for (const input of [el.searchInput, el.titleInput, el.authorInput, el.tagInput]) {
     input.addEventListener("keydown", (event) => {
@@ -258,6 +320,7 @@ function bindEvents() {
 }
 
 async function init() {
+  loadSavedBackground();
   bindEvents();
   try {
     await loadAlbums();

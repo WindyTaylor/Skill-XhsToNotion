@@ -46,6 +46,30 @@ ALBUM_DESCRIPTIONS_FILE = Path(__file__).parent / "album_descriptions.json"
 MAX_ALBUM_CANDIDATES = 5
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+COLOR_TAGS_PROP = "彩色标签"
+
+
+def normalize_tag_list(tags):
+    """Return clean tag names for Notion rich text and multi-select fields."""
+    if not tags:
+        return []
+    if isinstance(tags, list):
+        raw_tags = tags
+    else:
+        raw_tags = re.split(r"[,，、;；\n]+", str(tags))
+
+    clean_tags = []
+    seen = set()
+    for tag in raw_tags:
+        clean_tag = re.sub(r"\s+", " ", str(tag or "")).strip(" ,，、;；")
+        if not clean_tag:
+            continue
+        key = clean_tag.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        clean_tags.append(clean_tag[:80])
+    return clean_tags[:20]
 
 ALBUM_GENERIC_WORDS = (
     "学习",
@@ -716,15 +740,10 @@ class NotionSaver:
             }
         }
         
-        # 添加野生标签 (文本属性)
-        tags_str = ""
+        # 添加野生标签 (文本属性) 和彩色标签 (multi-select)
+        tag_names = normalize_tag_list(data.get("tags"))
+        tags_str = ", ".join(tag_names)
         if data.get("tags"):
-            tags = data.get("tags", "")
-            if isinstance(tags, list):
-                tags_str = ", ".join([tag.strip() for tag in tags if tag.strip()])
-            else:
-                tags_str = tags
-                
             if tags_str:
                 page_data["properties"]["野生标签"] = {
                     "rich_text": [
@@ -734,6 +753,9 @@ class NotionSaver:
                             }
                         }
                     ]
+                }
+                page_data["properties"][COLOR_TAGS_PROP] = {
+                    "multi_select": [{"name": tag_name} for tag_name in tag_names]
                 }
                 
         # 调用智能路由分类功能
@@ -848,6 +870,7 @@ class NotionSaver:
             current_title = read_title(props.get("标题", {}))
             current_summary = read_rich_text(props.get("简介", {}))
             current_tags = read_rich_text(props.get("野生标签", {}))
+            current_color_tags = props.get(COLOR_TAGS_PROP, {}).get("multi_select", [])
             current_album = props.get("库B：专辑标签库", {}).get("relation", [])
 
             placeholder_titles = {"小红书笔记提取失败", "小红书笔记", "未命名笔记"}
@@ -860,6 +883,12 @@ class NotionSaver:
                 update_props["简介"] = {"rich_text": [{"text": {"content": incoming_summary}}]}
             if incoming_tags and not current_tags:
                 update_props["野生标签"] = {"rich_text": [{"text": {"content": incoming_tags}}]}
+            if incoming_tags and not current_color_tags:
+                tag_names = normalize_tag_list(incoming_tags)
+                if tag_names:
+                    update_props[COLOR_TAGS_PROP] = {
+                        "multi_select": [{"name": tag_name} for tag_name in tag_names]
+                    }
             album_name, album_id = resolve_album(data.get("album"), use_default=True)
             if album_id and album_id != "id_fallback" and not current_album:
                 update_props["库B：专辑标签库"] = {"relation": [{"id": album_id}]}

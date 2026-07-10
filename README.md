@@ -7,7 +7,7 @@
 ## 功能特性
 
 - 从小红书链接自动提取标题、正文简介、作者、话题标签、封面图和最终跳转链接。
-- 保存到 Notion 内容总库，写入标题、链接、简介、作者、状态、野生标签、封面和专辑 Relation。
+- 保存到 Notion 内容总库，写入标题、链接、简介、作者、状态、野生标签、彩色标签、封面和专辑 Relation。
 - 保存前按小红书笔记 ID 查重，避免重复创建同一篇笔记。
 - 使用 DeepSeek 的 OpenAI-compatible 接口，根据标题、简介、标签和专辑描述推理最相关的专辑候选。
 - 未配置 DeepSeek 或调用失败时，自动退回本地关键词规则兜底分类。
@@ -64,6 +64,7 @@ python -m pip install requests
 | `作者` | Rich text | 作者昵称 |
 | `状态` | Select | 默认写入 `待阅读` |
 | `野生标签` | Rich text | 从小红书提取或手动追加的标签 |
+| `彩色标签` | Multi-select | 从野生标签拆分出的彩色标签，用于 Notion 画廊卡片展示 |
 | `库B：专辑标签库` | Relation | 关联到 Notion 专辑标签库 |
 
 Relation 字段依赖 `program/album_map.json`。如果专辑库有增删改，运行 `program/update_album_map.py` 刷新映射。
