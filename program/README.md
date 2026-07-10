@@ -6,6 +6,7 @@
 
 - 从小红书链接自动提取标题、正文简介、作者、话题标签、封面图和最终跳转链接。
 - 写入 Notion 数据库，并设置标题、链接、简介、作者、状态、野生标签和专辑 Relation。
+- 使用 DeepSeek LLM 根据标题、简介、标签和用户维护的专辑描述推理最相关的前五个专辑候选，默认保存到第一个候选；DeepSeek 不可用时自动退回关键词兜底。
 - 保存前按笔记 ID 查重，重复笔记会跳过创建并更新 `last_page_id.txt`。
 - 支持对最近一次保存的页面追加野生标签。
 - 支持对最近一次保存的页面更新归属专辑。
@@ -22,6 +23,7 @@
 | `config.py` | 配置加载辅助类 |
 | `config_template.json` | 本地配置模板 |
 | `album_map.json` | 专辑名到 Notion relation page id 的映射 |
+| `album_descriptions.json` | 专辑名到语义描述的映射，供 DeepSeek 推理参考 |
 | `update_album_map.py` | 从 Notion 数据库刷新专辑映射 |
 | `last_page_id.txt` | 最近一次保存或命中的 Notion 页面 ID |
 
@@ -53,9 +55,17 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 ```powershell
 $env:NOTION_API_KEY="ntn_xxx"
 $env:NOTION_DATABASE_ID="your_database_id"
+$env:DEEPSEEK_API_KEY="sk_xxx"
 ```
 
 `program/config.json` 包含私密凭据，不应提交到 Git。
+
+DeepSeek 专辑推理使用 OpenAI-compatible 接口，默认配置为：
+
+```text
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+```
 
 ## 常用命令
 
@@ -73,9 +83,10 @@ python program/xiaohongshu_to_notion_cli.py `
   --title "笔记标题" `
   --summary "笔记简介" `
   --author "作者昵称" `
-  --tags "标签1,标签2" `
-  --album "待分类收件箱"
+  --tags "标签1,标签2"
 ```
+
+不要在普通保存时传 `--album`，这样 CLI 才会自动调用 DeepSeek 生成候选并保存到第 1 个候选。只有用户明确指定专辑时才传 `--album`。
 
 为最近一次保存的页面追加标签：
 
@@ -87,6 +98,20 @@ python program/xiaohongshu_to_notion_cli.py --append-tags "新标签,待整理"
 
 ```powershell
 python program/xiaohongshu_to_notion_cli.py --update-album "学习AI编程"
+```
+
+按最近一次候选列表的数字改选专辑：
+
+```powershell
+python program/xiaohongshu_to_notion_cli.py --select-album-candidate 2
+```
+
+为专辑写入或更新 LLM 参考描述：
+
+```powershell
+python program/xiaohongshu_to_notion_cli.py `
+  --describe-album "积累拍照灵感" `
+  --album-description "用于收集拍摄主题、画面构思、姿势、场景、风格参考和可复刻的出片灵感。"
 ```
 
 刷新专辑映射：

@@ -14,52 +14,97 @@ metadata: {"clawdbot":{"emoji":"📱→📝","requires":{"env":["NOTION_API_KEY"
 - 用户提供小红书链接，并要求保存到 Notion。
 - 用户要求给最近保存的小红书笔记追加野生标签。
 - 用户要求把最近保存的小红书笔记更新到指定专辑。
+- 用户要求描述、补充、修改某个专辑的用途或收录范围，供后续 LLM 专辑推理参考。
 - 用户要求刷新 Notion 专辑映射。
 
 ## 工作流程
 
-1. 从用户消息中提取小红书 URL。
+1. 从用户消息中提取小红书 URL。若消息是 QQ/OpenClaw 卡片，必须使用完整 `jump_url`，不要删掉 `xsec_token`、`share_id`、`share_channel` 等 query 参数。
 2. 调用 Python CLI 自动抓取页面内容。
-3. 保存前按笔记 ID 查询 Notion，避免重复创建。
-4. 将标题、链接、简介、作者、标签、状态、封面和专辑关系写入 Notion。
-5. 把保存或命中的页面 ID 写入 `last_page_id.txt`，供追加标签和更新专辑使用。
+3. CLI 会优先调用 DeepSeek LLM，根据标题、简介、标签以及 `album_descriptions.json` 中的专辑描述，从 `album_map.json` 中推理最相关的前五个专辑候选；DeepSeek 不可用时自动退回关键词兜底。
+4. 未显式指定 `--album` 时，CLI 会自动保存到第 1 个最相关专辑。
+5. 保存前按笔记 ID 查询 Notion，避免重复创建。
+6. 将标题、链接、简介、作者、标签、状态、封面和专辑关系写入 Notion。
+7. 把保存或命中的页面 ID 写入 `last_page_id.txt`，把最近一次专辑候选写入 `last_album_candidates.json`，供追加标签、更新专辑和数字改选使用。
 
 ## 执行命令
 
 保存笔记：
 
 ```powershell
-python program/xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/explore/..."
+python xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/explore/..."
 ```
 
 保存并指定字段：
 
 ```powershell
-python program/xiaohongshu_to_notion_cli.py `
-  --url "https://www.xiaohongshu.com/explore/..." `
+python xiaohongshu_to_notion_cli.py `
+  --url "https://www.xiaohongshu.com/explore/...?xsec_token=..." `
   --title "标题" `
   --summary "简介" `
   --author "作者" `
-  --tags "标签1,标签2" `
-  --album "待分类收件箱"
+  --tags "标签1,标签2"
 ```
+
+保存笔记时不要主动传 `--album`。只有用户明确指定“保存到某个专辑”时，才允许传 `--album "<用户指定专辑名>"`。未指定时必须让 CLI 自动调用 DeepSeek 生成 TOP5 候选并保存到第 1 个候选。
+
+## QQ 卡片链接规则
+
+- OpenClaw 收到小红书 QQ 卡片时，`jump_url` 才是要传给 CLI 的 URL。
+- 不要把 `jump_url` 清洗成裸链接；保留全部 query 参数，尤其是 `xsec_token`、`xsec_source`、`share_id`、`share_channel`、`xhsshare`。
+- 不要因为 URL 很长就截断；PowerShell 命令里用双引号包住完整 URL。
+- `title`、`desc`、`tag` 是 QQ 卡片预览字段，可能被省略号截断。它们只能在页面抓取失败时作为部分兜底信息，不代表完整页面内容。
+- 如果页面抓取失败但卡片字段可见，可以再次用完整 `jump_url` 加可见字段保存部分信息：
+
+```powershell
+python xiaohongshu_to_notion_cli.py `
+  --url "<完整 jump_url>" `
+  --title "<QQ 卡片 title>" `
+  --summary "<QQ 卡片 desc>" `
+  --tags "<QQ 卡片可见标签>"
+```
+
+## 回复要求
+
+- 如果 CLI 输出里出现 `OPENCLAW_REPLY_START` 和 `OPENCLAW_REPLY_END`，最终回复必须只复制这两个标记之间的内容；不要改写、不要省略、不要添加任何额外句子。
+- 保存成功后，回复用户时必须包含保存到 Notion 的专辑名称。
+- 如果 CLI 输出里出现 `专辑候选 TOP5:` 或 `候选专辑：`，回复用户时必须列出 1-5 的全部候选，并说明当前已自动保存到第 1 个候选。
+- 回复候选时保留数字序号，告诉用户可以直接回复数字来改到对应专辑。
+- 禁止在保存回复里添加主观评论、玩笑、夸赞、感想、延伸解读或颜文字；只返回保存结果和候选专辑。
+- 如果没有写入专辑或找不到专辑映射，需要明确告诉用户“专辑未设置”，不要假装已经分类。
 
 追加最近页面的野生标签：
 
 ```powershell
-python program/xiaohongshu_to_notion_cli.py --append-tags "标签1,标签2"
+python xiaohongshu_to_notion_cli.py --append-tags "标签1,标签2"
 ```
 
 更新最近页面的归属专辑：
 
 ```powershell
-python program/xiaohongshu_to_notion_cli.py --update-album "学习AI编程"
+python xiaohongshu_to_notion_cli.py --update-album "学习AI编程"
 ```
+
+按最近一次候选列表的数字改选专辑：
+
+```powershell
+python xiaohongshu_to_notion_cli.py --select-album-candidate 2
+```
+
+当用户在保存后回复 `1`、`2`、`3`、`4` 或 `5`，并且语境明显是在选择刚才列出的专辑候选时，调用 `--select-album-candidate <数字>`，不要重新保存小红书笔记。
+
+为专辑写入或更新 LLM 参考描述：
+
+```powershell
+python xiaohongshu_to_notion_cli.py --describe-album "积累拍照灵感" --album-description "用于收集拍摄主题、画面构思、姿势、场景、风格参考和可复刻的出片灵感。"
+```
+
+当用户在聊天框里说“把某某专辑描述为……”“某某专辑主要用于……”“以后某某专辑收录……”时，调用 `--describe-album` 和 `--album-description`。不要把这类请求当作保存小红书笔记。
 
 刷新专辑映射：
 
 ```powershell
-python program/update_album_map.py
+python update_album_map.py
 ```
 
 ## 配置
@@ -74,6 +119,12 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 
 - `NOTION_API_KEY`
 - `NOTION_DATABASE_ID`
+
+可选配置：
+
+- `DEEPSEEK_API_KEY`：用于 LLM 专辑推理。未配置或调用失败时，CLI 会自动退回关键词兜底。
+- `DEEPSEEK_BASE_URL`：默认 `https://api.deepseek.com`
+- `DEEPSEEK_MODEL`：默认 `deepseek-chat`
 
 `program/config.json` 是本地私密配置，不应提交。仓库只保留 `program/config_template.json`。
 
@@ -92,6 +143,7 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 ## 维护提示
 
 - 页面提取逻辑集中在 `local_extractor.py`。
-- Notion 保存、查重、追加标签、更新专辑集中在 `xiaohongshu_to_notion_cli.py`。
+- Notion 保存、查重、DeepSeek 专辑推理、追加标签、更新专辑和专辑描述维护集中在 `xiaohongshu_to_notion_cli.py`。
 - 专辑映射来自 `album_map.json`，可用 `update_album_map.py` 重新生成。
+- 专辑语义描述来自 `album_descriptions.json`，由 `--describe-album` / `--album-description` 更新，供 DeepSeek 推理参考。
 - Edge 扩展实现已放入 `references/4.edge_with_notion`，作为批量抓取参考，不是当前主开发路线。

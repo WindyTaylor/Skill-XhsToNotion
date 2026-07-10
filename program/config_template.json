@@ -1,5 +1,8 @@
 {
   "NOTION_API_KEY": "ntn_your_api_key_here",
   "NOTION_DATABASE_ID": "your_database_id_here",
-  "NOTION_VERSION": "2025-09-03"
+  "NOTION_VERSION": "2025-09-03",
+  "DEEPSEEK_API_KEY": "sk_your_deepseek_api_key_here_optional",
+  "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+  "DEEPSEEK_MODEL": "deepseek-chat"
 }
