@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>小红书收藏管理台启动器</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1f2328;
+        --muted: #667085;
+        --accent: #2f7de1;
+        --accent-dark: #1f65bd;
+        --surface: #ffffff;
+        --line: #dedede;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 96px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: var(--surface);
+      }
+
+      .launch-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 176px;
+        min-height: 42px;
+        padding: 0 18px;
+        border-radius: 7px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .launch-button:hover,
+      .launch-button:focus {
+        background: var(--accent-dark);
+        border-color: var(--accent-dark);
+      }
+
+      @media (max-width: 560px) {
+        .launch-button {
+          width: calc(100% - 32px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <button
+      type="button"
+      class="launch-button"
+      aria-label="启动小红书收藏管理"
+      onclick="launchConsole()"
+    >
+      启动小红书收藏管理
+    </button>
+    <script>
+      function launchConsole() {
+        var protocolUrl = "xhs-notion-console://start?mode=local";
+        var localUrl = "http://127.0.0.1:8765";
+
+        try {
+          window.open(protocolUrl, "_blank", "noopener,noreferrer");
+        } catch (error) {
+          window.location.href = protocolUrl;
+        }
+
+        window.setTimeout(function () {
+          window.open(localUrl, "_blank", "noopener,noreferrer");
+        }, 1200);
+      }
+    </script>
+  </body>
+</html>

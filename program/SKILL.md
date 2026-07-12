@@ -122,6 +122,8 @@ http://127.0.0.1:8765
 
 收藏管理台用于在浏览器或 Notion embed 中搜索内容总库，按标题、作者、野生标签、状态和专辑过滤，多选笔记后追加到目标专辑。追加专辑必须保留原有 Relation，不要改成覆盖式移动。
 
+如果用户希望从 Notion 快速打开管理台，可使用 `web/notion_launcher.html` 作为 Notion 启动页，并运行 `install_console_protocol.ps1` 注册 `xhs-notion-console://` 本机协议。Notion 页面默认只保留一个本地启动按钮，点击后尝试启动本地服务并打开 `http://127.0.0.1:8765`。注意 Notion 上传的 HTML 在沙箱 iframe 中运行，可能拦截外部协议或弹窗；按钮无反应时不要误判为本地脚本损坏，应改用直接本地地址、浏览器书签或桌面快捷方式。若用户希望 Notion 内嵌完整管理台，可让 `start_management_console.ps1` 以 `cloudflared-quick` 模式启动 Cloudflare Quick Tunnel；该地址是临时地址，固定入口需要后续配置 Named Tunnel 或云端部署。
+
 ## 配置
 
 优先使用 `program/config.json`，也支持环境变量兜底。

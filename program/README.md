@@ -28,6 +28,8 @@
 | `update_album_map.py` | 从 Notion 数据库刷新专辑映射 |
 | `notion_manager.py` | 收藏管理台后端核心，负责查询、过滤和追加专辑 Relation |
 | `manage_server.py` | 本地 Web 收藏管理台服务入口 |
+| `start_management_console.ps1` | 一键启动本地管理台，可选启动 Cloudflare HTTPS 临时隧道 |
+| `install_console_protocol.ps1` | 注册 `xhs-notion-console://` 本机启动协议 |
 | `web/` | 收藏管理台前端页面、样式和交互脚本 |
 | `last_page_id.txt` | 最近一次保存或命中的 Notion 页面 ID |
 
@@ -149,6 +151,24 @@ http://127.0.0.1:8765
 批量追加使用“保留原专辑 + 追加目标专辑”的 Relation 更新方式，不会覆盖已有专辑。
 
 如果要在 Notion 里使用，可新建 `小红书收藏管理台` 页面并用 `/embed` 嵌入本地地址。若 Notion 客户端无法访问 `127.0.0.1`，先在浏览器中直接打开。
+
+### Notion 启动页
+
+`web/notion_launcher.html` 是一个可上传或嵌入 Notion 的启动页。首次使用前运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
+```
+
+之后可在启动页中点击：
+
+- `启动小红书收藏管理`：调用 `xhs-notion-console://start?mode=local`，启动本地服务并打开 `http://127.0.0.1:8765`。
+
+如需 Notion 内嵌完整管理台，可手动运行 `start_management_console.ps1 -Mode cloudflared-quick`。这需要先安装 `cloudflared`，脚本会尝试复制 `https://*.trycloudflare.com` 到剪贴板，供 Notion `/embed` 使用。
+
+Quick Tunnel 地址是临时地址；固定 Notion 嵌入入口需要 Cloudflare Named Tunnel、自有域名或云端部署，并增加认证。
+
+已知限制：Notion 上传的 HTML 运行在沙箱 iframe 中，可能会拦截 `xhs-notion-console://` 外部协议和弹窗。如果按钮无反应，优先确认本地服务 `http://127.0.0.1:8765/api/health`，再使用浏览器书签或桌面快捷方式作为稳定入口。
 
 ## 注意事项
 

@@ -43,8 +43,13 @@ Updated: 2026-07-10
 - `program/notion_manager.py`：查询 Notion 内容总库、按标题/作者/标签/状态/专辑过滤、批量追加专辑 Relation。
 - `program/manage_server.py`：本地 HTTP 服务，默认监听 `http://127.0.0.1:8765`。
 - `program/web/`：管理台前端，包含搜索框、过滤器、结果表格、多选和追加到专辑操作。
+- `program/web/notion_launcher.html`：可上传或嵌入 Notion 的单按钮启动页，通过 `xhs-notion-console://` 唤起本机脚本并打开本地管理台。
+- `program/start_management_console.ps1`：一键启动本地管理台，可选启动 Cloudflare Quick Tunnel。
+- `program/install_console_protocol.ps1`：注册 Windows 用户级 `xhs-notion-console://` 协议。
 
 该功能遵循 `doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md`：第一版只实现“追加到专辑”，保留原有 Relation，不做覆盖式移动。
+
+Notion 启动页的已知限制：上传 HTML 会运行在沙箱 iframe 中，部分客户端可能拦截本机协议和弹窗。稳定入口仍是直接访问 `http://127.0.0.1:8765`、浏览器书签或桌面快捷方式。
 
 ## Notion Schema
 

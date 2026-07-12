@@ -367,6 +367,29 @@ http://127.0.0.1:8765
 
 注意：Notion 对本地地址嵌入可能受客户端和网络策略影响。如果 Notion 客户端无法嵌入 `127.0.0.1`，则先使用浏览器打开本地管理台；后续再考虑部署到局域网或云端。
 
+### 启动页 + HTTPS 隧道组合
+
+为了减少手动输入命令，可增加一个 Notion 可嵌入的启动页：
+
+- `program/web/notion_launcher.html`：静态 HTML，不包含 Notion token，只提供一个本地启动按钮。
+- `program/install_console_protocol.ps1`：注册 `xhs-notion-console://` Windows 用户级协议。
+- `program/start_management_console.ps1`：被协议唤起后启动本地服务；在 `mode=cloudflared-quick` 时尝试启动 Cloudflare Quick Tunnel。
+
+使用方式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
+```
+
+然后在 Notion 中上传或嵌入 `program/web/notion_launcher.html`。点击“启动小红书收藏管理”会启动本地服务并打开 `http://127.0.0.1:8765`。如果需要生成 `https://*.trycloudflare.com` 地址，可手动运行 `start_management_console.ps1 -Mode cloudflared-quick`，复制后用于 Notion `/embed`。
+
+边界：
+
+- HTML/Notion 不能直接执行本地程序，必须通过用户主动注册的系统协议唤起脚本。
+- Notion 上传的 HTML 运行在沙箱 iframe 中，部分客户端可能会拦截外部协议和弹窗；按钮无反应时应改用直接本地地址、浏览器书签或桌面快捷方式。
+- Cloudflare Quick Tunnel 地址不是固定地址，重启后可能变化。
+- 固定公开入口需要 Cloudflare Named Tunnel、自有域名或云端部署，并必须增加认证。
+
 ## 后续阶段建议
 
 ### 第二阶段

@@ -26,6 +26,8 @@
 │   ├── update_album_map.py           # 从 Notion 刷新专辑 Relation 映射
 │   ├── notion_manager.py             # 收藏管理台的 Notion 查询与批量更新逻辑
 │   ├── manage_server.py              # 本地 Web 收藏管理台服务
+│   ├── start_management_console.ps1   # 一键启动本地管理台，可选启动 HTTPS 临时隧道
+│   ├── install_console_protocol.ps1   # 注册 xhs-notion-console:// 本机启动协议
 │   ├── configure.py                  # 写入本地配置
 │   ├── config_template.json          # 配置模板
 │   ├── album_map.json                # 专辑名到 Notion page id 的映射
@@ -177,6 +179,34 @@ http://127.0.0.1:8765
 
 如需放入 Notion 页面，可在 Notion 中创建页面后使用 `/embed` 嵌入上述地址。若 Notion 客户端无法嵌入本地地址，先直接用浏览器打开管理台。
 
+### Notion 快速入口与 HTTPS 嵌入
+
+如果 Notion 无法直接嵌入 `http://127.0.0.1:8765`，可以使用“启动页 + 本机协议”的组合，在 Notion 中只保留一个启动按钮：
+
+1. 首次在本机注册启动协议：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
+```
+
+2. 将 `program/web/notion_launcher.html` 上传或嵌入到 Notion。这个 HTML 不包含 Notion token，只提供一个启动按钮。
+3. 在 Notion 启动页点击“启动小红书收藏管理”，会通过 `xhs-notion-console://start?mode=local` 启动本地服务，并自动打开 `http://127.0.0.1:8765`。
+4. 如果需要在 Notion 内嵌完整管理台，可手动使用脚本的 Cloudflare Quick Tunnel 模式：
+
+```powershell
+winget install --id Cloudflare.cloudflared
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File program/start_management_console.ps1 -Mode cloudflared-quick
+```
+
+脚本会启动 `cloudflared tunnel --url http://127.0.0.1:8765`，并尝试把生成的 `https://*.trycloudflare.com` 地址复制到剪贴板。把该地址粘贴到 Notion 的 `/embed` 即可。
+
+注意：Cloudflare Quick Tunnel 地址是临时的，重启后可能变化。长期固定入口建议配置 Cloudflare Named Tunnel 或云端部署，并增加访问认证。
+
+已知限制：Notion 上传的 HTML 会运行在沙箱 iframe 中，部分 Notion 客户端或浏览器可能会拦截 `xhs-notion-console://` 外部协议和弹窗。如果按钮没有反应，本地协议和服务仍可正常使用，可靠兜底是直接打开 `http://127.0.0.1:8765`，或把 `xhs-notion-console://start?mode=local` 做成浏览器书签/桌面快捷方式。
+
 ## QQ 卡片与 Skill 使用注意
 
 当 Codex/OpenClaw 从 QQ 收到小红书卡片时，应使用卡片中的完整 `jump_url`，不要删掉 query 参数。尤其需要保留：
@@ -196,6 +226,8 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 - `program/album_map.json`：专辑名到 Notion Relation page id 的映射。
 - `program/album_descriptions.json`：专辑语义描述，用于提升 DeepSeek 专辑推理准确度。
 - `program/manage_server.py`：本地收藏管理台入口，默认只监听 `127.0.0.1`。
+- `program/start_management_console.ps1`：一键启动本地管理台，可选启动 Cloudflare HTTPS 临时隧道。
+- `program/install_console_protocol.ps1`：注册 `xhs-notion-console://` 协议，供 Notion 启动页唤起本地脚本。
 - `program/notion_manager.py`：收藏管理台后端逻辑，负责查询、过滤和批量追加专辑。
 
 ## 维护说明
