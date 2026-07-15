@@ -72,9 +72,36 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 ```text
 NOTION_TIMEOUT=15
 NOTION_VERIFY_SSL=false
+NOTION_FILE_UPLOAD_VERSION=2026-03-11
+COVER_CACHE_ENABLED=true
+COVER_UPLOAD_TO_NOTION=true
+COVER_CACHE_DIR=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 ```
+
+## 封面缓存与上传接口
+
+`cover_assets.py` 提供可复用的封面存储和 Notion 上传接口：
+
+- `CoverAssetStore`：下载封面、按 SHA-256 去重、维护 `program/data/cover_assets.json` 索引，并提供 `/covers/{filename}` 本地 URL。
+- `NotionFileUploader`：封装 Notion File Upload 的创建、发送文件、设置页面封面流程。
+- `CoverAssetService`：组合“缓存 -> 上传 -> 设置页面封面”，CLI 和管理台共用。
+
+默认保存笔记时会把封面上传为 Notion 托管文件；如需只使用外链封面，可设置 `COVER_UPLOAD_TO_NOTION=false`。本地运行管理台后，浏览器扩展可调用：
+
+```http
+POST http://127.0.0.1:8765/api/covers/cache
+Content-Type: application/json
+
+{
+  "source_url": "https://...",
+  "page_id": "notion-page-id",
+  "upload_to_notion": true
+}
+```
+
+返回的 `asset` 包含本地文件、哈希、源 URL、关联页面和 Notion `file_upload` id，适合扩展端复用。
 
 ## 常用命令
 

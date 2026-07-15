@@ -301,6 +301,37 @@ cursor=notion_cursor
 }
 ```
 
+### `POST /api/covers/cache`
+
+缓存封面到本地，可选上传到 Notion 并设置为页面封面。该接口是给管理台和后续浏览器扩展复用的本地后端能力，浏览器扩展不应直接保存 Notion token。
+
+请求示例：
+```json
+{
+  "source_url": "https://...",
+  "page_id": "page-id",
+  "upload_to_notion": true
+}
+```
+
+响应示例：
+```json
+{
+  "ok": true,
+  "asset": {
+    "id": "sha256",
+    "filename": "sha256.jpg",
+    "local_url": "/covers/sha256.jpg",
+    "content_type": "image/jpeg",
+    "size": 12345,
+    "sha256": "sha256",
+    "notion_file_upload_id": "file-upload-id"
+  }
+}
+```
+
+默认本地存储目录为 `program/data/covers/`，索引为 `program/data/cover_assets.json`。这些文件是运行时数据，不应提交到 Git。
+
 ## Notion 查询实现要点
 
 ### 查询策略

@@ -7,6 +7,14 @@ from pathlib import Path
 
 import requests
 
+from cover_assets import (
+    CoverAssetError,
+    CoverAssetService,
+    CoverAssetStore,
+    NotionFileUploader,
+    notion_file_upload_version_from_config,
+)
+
 try:
     import urllib3
 except ImportError:  # pragma: no cover - urllib3 is a requests dependency in normal installs.
@@ -26,6 +34,7 @@ TAGS_PROP = "野生标签"
 ALBUM_PROP = "库B：专辑标签库"
 
 DEFAULT_NOTION_VERSION = "2025-09-03"
+DEFAULT_NOTION_FILE_UPLOAD_VERSION = "2026-03-11"
 DEFAULT_NOTION_TIMEOUT = 15
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 200
@@ -84,6 +93,11 @@ def load_config():
         or file_config.get("NOTION_VERSION")
         or DEFAULT_NOTION_VERSION
     )
+    notion_file_upload_version = (
+        os.getenv("NOTION_FILE_UPLOAD_VERSION")
+        or file_config.get("NOTION_FILE_UPLOAD_VERSION")
+        or DEFAULT_NOTION_FILE_UPLOAD_VERSION
+    )
     notion_timeout = int(
         os.getenv("NOTION_TIMEOUT")
         or file_config.get("NOTION_TIMEOUT")
@@ -104,8 +118,10 @@ def load_config():
         "notion_database_id": notion_database_id,
         "notion_data_source_id": notion_data_source_id,
         "notion_version": notion_version,
+        "notion_file_upload_version": notion_file_upload_version,
         "notion_timeout": notion_timeout,
         "verify_ssl": verify_ssl,
+        "raw_config": file_config,
     }
 
 
@@ -160,11 +176,23 @@ class NotionNoteManager:
         self.database_id = config["notion_database_id"]
         self.data_source_id = config["notion_data_source_id"]
         self.notion_version = config["notion_version"]
+        self.notion_file_upload_version = config["notion_file_upload_version"]
         self.notion_timeout = config["notion_timeout"]
         self.verify_ssl = config["verify_ssl"]
         self.session = requests.Session()
         self.album_map = load_album_map()
         self.album_id_to_name = {album_id: name for name, album_id in self.album_map.items()}
+        self.cover_store = CoverAssetStore()
+        self.cover_service = CoverAssetService(
+            store=self.cover_store,
+            uploader=NotionFileUploader(
+                self.notion_api_key,
+                notion_version=notion_file_upload_version_from_config(config["raw_config"]),
+                timeout=self.notion_timeout,
+                verify_ssl=self.verify_ssl,
+                session=self.session,
+            ),
+        )
 
         if not self.verify_ssl and urllib3:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -216,6 +244,19 @@ class NotionNoteManager:
         except NotionAPIError:
             return ""
         return read_cover_url(page)
+
+    def cache_cover_asset(self, source_url, page_id="", upload_to_notion=False):
+        """Cache a cover locally, optionally upload it and set it as page cover."""
+        try:
+            if upload_to_notion:
+                if not page_id:
+                    raise NotionManagerError("上传到 Notion 时需要 page_id。")
+                result = self.cover_service.cache_upload_and_attach(source_url, page_id)
+            else:
+                result = self.cover_service.cache_cover(source_url, page_id=page_id)
+            return {"ok": True, "asset": result}
+        except CoverAssetError as exc:
+            raise NotionManagerError(str(exc)) from exc
 
     def debug_first_page_cover(self, limit=3):
         """Diagnostic helper: dump the raw cover field for the first N pages.
@@ -365,12 +406,17 @@ class NotionNoteManager:
         relations = props.get(ALBUM_PROP, {}).get("relation", [])
         album_ids = [item.get("id") for item in relations if item.get("id")]
         albums = [self.album_id_to_name.get(album_id, album_id) for album_id in album_ids]
+        page_id = page.get("id")
+        notion_cover = read_cover_url(page)
+        local_cover = self.cover_store.get_local_url_for_page(page_id)
 
         return {
-            "id": page.get("id"),
+            "id": page_id,
             "title": read_title(props.get(TITLE_PROP, {})),
             "url": read_url(props.get(URL_PROP, {})),
-            "cover": read_cover_url(page),
+            "cover": local_cover or notion_cover,
+            "cover_local": local_cover,
+            "cover_notion": notion_cover,
             "summary": read_rich_text(props.get(SUMMARY_PROP, {})),
             "author": read_rich_text(props.get(AUTHOR_PROP, {})),
             "tags": read_rich_text(props.get(TAGS_PROP, {})),

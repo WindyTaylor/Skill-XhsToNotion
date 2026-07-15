@@ -134,6 +134,7 @@ program/config.json
 config.json
 
 # Runtime and test outputs
+program/data/
 debug_html/
 extracted_results/
 results/

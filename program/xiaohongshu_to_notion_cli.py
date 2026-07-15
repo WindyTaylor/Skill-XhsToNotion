@@ -12,6 +12,15 @@ import argparse
 import re
 from pathlib import Path
 
+from cover_assets import (
+    CoverAssetError,
+    CoverAssetService,
+    CoverAssetStore,
+    NotionFileUploader,
+    as_bool,
+    notion_file_upload_version_from_config,
+)
+
 # 强制将标准输出和错误输出配置为 UTF-8，防止 Windows 终端下出现包含 Emoji 时的 UnicodeEncodeError
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
@@ -608,8 +617,14 @@ class NotionSaver:
         from pathlib import Path
         
         self.notion_version = "2022-06-28"
+        self.notion_file_upload_version = "2026-03-11"
+        self.notion_timeout = 30
+        self.verify_ssl = False
+        self.cover_cache_enabled = True
+        self.cover_upload_to_notion = True
         self.notion_api_key = None
         self.notion_database_id = None
+        config = {}
         
         # 优先尝试从本地 config.json 读取（因为 Agent 可以通过 configure.py 动态修改）
         config_path = Path(__file__).parent / "config.json"
@@ -619,6 +634,18 @@ class NotionSaver:
                     config = json.load(f)
                     self.notion_api_key = config.get("NOTION_API_KEY")
                     self.notion_database_id = config.get("NOTION_DATABASE_ID")
+                    self.notion_version = config.get("NOTION_VERSION") or self.notion_version
+                    self.notion_file_upload_version = notion_file_upload_version_from_config(config)
+                    self.notion_timeout = int(config.get("NOTION_TIMEOUT") or self.notion_timeout)
+                    self.verify_ssl = as_bool(config.get("NOTION_VERIFY_SSL"), default=self.verify_ssl)
+                    self.cover_cache_enabled = as_bool(
+                        config.get("COVER_CACHE_ENABLED"),
+                        default=self.cover_cache_enabled,
+                    )
+                    self.cover_upload_to_notion = as_bool(
+                        config.get("COVER_UPLOAD_TO_NOTION"),
+                        default=self.cover_upload_to_notion,
+                    )
             except Exception as e:
                 print(f"[WARN] 读取 config.json 失败: {e}")
         
@@ -627,6 +654,18 @@ class NotionSaver:
             self.notion_api_key = os.environ.get("NOTION_API_KEY")
         if not self.notion_database_id:
             self.notion_database_id = os.environ.get("NOTION_DATABASE_ID")
+        self.notion_version = os.environ.get("NOTION_VERSION") or self.notion_version
+        self.notion_file_upload_version = (
+            os.environ.get("NOTION_FILE_UPLOAD_VERSION") or self.notion_file_upload_version
+        )
+        self.cover_cache_enabled = as_bool(
+            os.environ.get("COVER_CACHE_ENABLED"),
+            default=self.cover_cache_enabled,
+        )
+        self.cover_upload_to_notion = as_bool(
+            os.environ.get("COVER_UPLOAD_TO_NOTION"),
+            default=self.cover_upload_to_notion,
+        )
         
         if not self.notion_api_key:
             print("[FAIL] 错误: 未设置 NOTION_API_KEY")
@@ -637,7 +676,49 @@ class NotionSaver:
             print("[FAIL] 错误: 未设置 NOTION_DATABASE_ID")
             print("请通过环境变量或 config.json 进行设置")
             sys.exit(1)
-    
+
+        self.cover_store = CoverAssetStore()
+        self.cover_service = CoverAssetService(
+            store=self.cover_store,
+            uploader=NotionFileUploader(
+                self.notion_api_key,
+                notion_version=self.notion_file_upload_version,
+                timeout=self.notion_timeout,
+                verify_ssl=self.verify_ssl,
+            ),
+        )
+
+    def external_cover_payload(self, cover_url):
+        return {
+            "type": "external",
+            "external": {
+                "url": cover_url
+            }
+        }
+
+    def persist_cover_for_page(self, page_id, cover_url):
+        cover_url = str(cover_url or "").strip()
+        if not page_id or not cover_url or not self.cover_cache_enabled:
+            return None
+
+        try:
+            if self.cover_upload_to_notion:
+                result = self.cover_service.cache_upload_and_attach(cover_url, page_id)
+                print(f"[OK] Cover cached and uploaded: {result.get('filename', '')}")
+            else:
+                result = self.cover_service.cache_cover(cover_url, page_id=page_id)
+                print(f"[OK] Cover cached locally: {result.get('local_url', '')}")
+            return result
+        except CoverAssetError as exc:
+            print(f"[WARN] Cover cache/upload failed: {exc}")
+            if self.cover_upload_to_notion:
+                try:
+                    self.cover_service.uploader.set_page_cover_external(page_id, cover_url)
+                    print("[WARN] Fallback to external cover URL succeeded.")
+                except CoverAssetError as fallback_exc:
+                    print(f"[WARN] Fallback external cover failed: {fallback_exc}")
+            return None
+
     def check_duplicate(self, note_id):
         """检查Notion数据库中是否已存在该笔记"""
         if not note_id:
@@ -769,13 +850,8 @@ class NotionSaver:
             }
                 
         # 添加封面图片
-        if data.get("cover"):
-            page_data["cover"] = {
-                "type": "external",
-                "external": {
-                    "url": data.get("cover")
-                }
-            }
+        if data.get("cover") and not self.cover_upload_to_notion:
+            page_data["cover"] = self.external_cover_payload(data.get("cover"))
         
         import time
         import requests
@@ -791,8 +867,8 @@ class NotionSaver:
                     "https://api.notion.com/v1/pages",
                     headers=headers,
                     json=page_data,
-                    verify=False,
-                    timeout=30
+                    verify=self.verify_ssl,
+                    timeout=self.notion_timeout
                 )
                 
                 if response.status_code == 200:
@@ -816,7 +892,9 @@ class NotionSaver:
                     print(f"   专辑: {data.get('album', '未设置')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
                     print("   状态: 待阅读".encode('gbk', 'ignore').decode('gbk', 'ignore'))
                     print_album_candidates(data.get("album_candidates", []), data.get("album"))
-                    
+                    if data.get("cover"):
+                        self.persist_cover_for_page(page_id, data.get("cover"))
+
                     return page_id
                 else:
                     print(f"[FAIL] 保存失败: {response.status_code}")
@@ -1220,6 +1298,8 @@ def main():
         if duplicate_id:
             print(f"[SKIP] 该笔记已存在于Notion中，跳过保存 (页面ID: {duplicate_id})")
             saver.backfill_placeholder(duplicate_id, data)
+            if data.get("cover"):
+                saver.persist_cover_for_page(duplicate_id, data.get("cover"))
             if data.get("album_candidates"):
                 write_album_candidates(duplicate_id, data["album_candidates"], data.get("album"))
                 print_album_candidates(data["album_candidates"], data.get("album"))

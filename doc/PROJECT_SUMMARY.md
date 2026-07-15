@@ -51,6 +51,15 @@ Updated: 2026-07-10
 
 Notion 启动页的已知限制：上传 HTML 会运行在沙箱 iframe 中，部分客户端可能拦截本机协议和弹窗。稳定入口仍是直接访问 `http://127.0.0.1:8765`、浏览器书签或桌面快捷方式。
 
+## 封面稳定化
+
+2026-07-15 新增封面本地缓存与 Notion File Upload 路线，用于解决小红书 CDN / 代理封面外链在 Notion Gallery 中不稳定的问题。
+
+- `program/cover_assets.py`：封面下载、SHA-256 去重、本地索引、Notion File Upload、页面封面 PATCH 的共用模块。
+- `program/data/covers/`：默认本地封面缓存目录，已加入 `.gitignore`，不提交。
+- `program/manage_server.py`：新增 `POST /api/covers/cache`，供管理台、浏览器扩展或其他本地工具复用。
+- `program/xiaohongshu_to_notion_cli.py`：保存新笔记或命中重复笔记时，会缓存封面并默认上传为 Notion 托管文件；上传失败时回退外链封面。
+
 ## Notion Schema
 
 Python CLI 当前使用的目标数据库字段：

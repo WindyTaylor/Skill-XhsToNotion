@@ -101,8 +101,31 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 | `DEEPSEEK_API_KEY` | 否 | 用于 LLM 专辑推理 |
 | `DEEPSEEK_BASE_URL` | 否 | 默认 `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | 否 | 默认 `deepseek-chat` |
+| `NOTION_FILE_UPLOAD_VERSION` | 否 | Notion File Upload API 版本，默认 `2026-03-11` |
+| `COVER_CACHE_ENABLED` | 否 | 是否启用封面本地缓存，默认 `true` |
+| `COVER_UPLOAD_TO_NOTION` | 否 | 是否把缓存封面上传到 Notion 并设置为页面封面，默认 `true` |
+| `COVER_CACHE_DIR` | 否 | 自定义封面缓存目录；留空时使用 `program/data/covers` |
 
 `program/config.json` 是本地私密配置，不应提交到 Git。仓库中只保留 `program/config_template.json`。
+
+## 封面缓存与上传
+
+CLI 保存笔记时会优先把小红书封面下载到本地缓存，再通过 Notion File Upload 上传为 Notion 托管文件并设置为页面封面，避免图库视图继续依赖不稳定的外链封面。缓存索引和图片默认保存在 `program/data/`，该目录已加入 `.gitignore`。
+
+管理台后端保留了可复用接口，后续浏览器扩展可以调用本机服务完成缓存和上传，而不是直接持有 Notion token：
+
+```http
+POST http://127.0.0.1:8765/api/covers/cache
+Content-Type: application/json
+
+{
+  "source_url": "https://...",
+  "page_id": "notion-page-id",
+  "upload_to_notion": true
+}
+```
+
+成功响应会返回 `asset`，其中包含 `id`、`filename`、`local_url`、`content_type`、`size`、`sha256`、`notion_file_upload_id` 等字段。本地封面可通过管理台的 `/covers/{filename}` 静态路径访问。
 
 ## 使用方法
 

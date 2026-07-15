@@ -162,6 +162,7 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 
 - 页面提取逻辑集中在 `local_extractor.py`。
 - Notion 保存、查重、DeepSeek 专辑推理、追加标签、更新专辑和专辑描述维护集中在 `xiaohongshu_to_notion_cli.py`。
+- 封面缓存与 Notion File Upload 集中在 `cover_assets.py`；CLI 和管理台共用该模块，运行时数据默认在 `program/data/`，不要提交。
 - 收藏管理台后端集中在 `notion_manager.py` 和 `manage_server.py`，前端集中在 `web/`，包含查询过滤、滚动加载、追加专辑和移入回收站能力。
 - 专辑映射来自 `album_map.json`，可用 `update_album_map.py` 重新生成。
 - 专辑语义描述来自 `album_descriptions.json`，由 `--describe-album` / `--album-description` 更新，供 DeepSeek 推理参考。

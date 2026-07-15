@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from cover_assets import CoverAssetStore, as_bool
 from notion_manager import NotionAPIError, NotionConfigError, NotionManagerError, NotionNoteManager
 
 
@@ -56,6 +57,9 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
                 limit = 3
             self.handle_api(lambda: {"pages": self.manager.debug_first_page_cover(limit=limit)})
             return
+        if path.startswith("/covers/"):
+            self.serve_cover(path)
+            return
         self.serve_static(path)
 
     def do_POST(self):
@@ -65,6 +69,16 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/notes/delete":
             self.handle_api(lambda: self.manager.archive_note(self.read_json_body().get("page_id", "")))
+            return
+        if path == "/api/covers/cache":
+            body = self.read_json_body()
+            self.handle_api(
+                lambda: self.manager.cache_cover_asset(
+                    body.get("source_url", ""),
+                    page_id=body.get("page_id", ""),
+                    upload_to_notion=as_bool(body.get("upload_to_notion"), default=False),
+                )
+            )
             return
         self.write_json({"ok": False, "error": "接口不存在。"}, status=HTTPStatus.NOT_FOUND)
 
@@ -118,6 +132,29 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def serve_cover(self, path):
+        store = CoverAssetStore()
+        cover_root = store.cover_dir.resolve()
+        requested = (cover_root / path.removeprefix("/covers/")).resolve()
+        try:
+            requested.relative_to(cover_root)
+        except ValueError:
+            self.send_error(HTTPStatus.FORBIDDEN)
+            return
+
+        if not requested.exists() or not requested.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+
+        content_type = mimetypes.guess_type(str(requested))[0] or "application/octet-stream"
+        body = requested.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
