@@ -63,6 +63,9 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         if path == "/api/notes/add-to-album":
             self.handle_api(lambda: self.manager.add_pages_to_album(**self.read_json_body()))
             return
+        if path == "/api/notes/delete":
+            self.handle_api(lambda: self.manager.archive_note(self.read_json_body().get("page_id", "")))
+            return
         self.write_json({"ok": False, "error": "接口不存在。"}, status=HTTPStatus.NOT_FOUND)
 
     def handle_api(self, callback):

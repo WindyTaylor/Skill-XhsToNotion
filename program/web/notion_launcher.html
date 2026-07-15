@@ -3,16 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>小红书收藏管理台启动器</title>
+    <title>收藏管理</title>
     <style>
       :root {
-        color-scheme: light;
-        --ink: #1f2328;
-        --muted: #667085;
-        --accent: #2f7de1;
-        --accent-dark: #1f65bd;
-        --surface: #ffffff;
-        --line: #dedede;
+        color-scheme: dark;
+        --bg: #151716;
+        --panel: #101315;
+        --ink: #f2f2ee;
+        --muted: #8e928d;
+        --line: #2a3d59;
+        --accent: #3b5cff;
+        --accent-soft: #91a3ff;
       }
 
       * {
@@ -21,54 +22,98 @@
 
       body {
         margin: 0;
-        min-height: 96px;
+        min-height: 104px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        padding: 18px 14px;
+        background:
+          radial-gradient(circle at 18% 0%, rgba(107, 86, 34, 0.18), transparent 38%),
+          var(--bg);
         color: var(--ink);
-        background: var(--surface);
+        font-family: "Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .console-entry {
+        width: min(760px, 100%);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .search-row {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        height: 44px;
+        padding: 0 18px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+      }
+
+      .search-row input {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .search-row input::placeholder {
+        color: var(--muted);
       }
 
       .launch-button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 176px;
-        min-height: 42px;
+        height: 40px;
+        min-width: 104px;
         padding: 0 18px;
-        border-radius: 7px;
         border: 1px solid var(--accent);
-        background: var(--accent);
-        color: #fff;
-        font-size: 14px;
-        font-weight: 600;
+        border-radius: 9px;
+        background: rgba(59, 92, 255, 0.1);
+        color: var(--accent-soft);
+        font-size: 13px;
+        font-weight: 500;
         white-space: nowrap;
         cursor: pointer;
       }
 
       .launch-button:hover,
       .launch-button:focus {
-        background: var(--accent-dark);
-        border-color: var(--accent-dark);
+        background: rgba(59, 92, 255, 0.2);
+        color: #e4e8ff;
       }
 
       @media (max-width: 560px) {
+        body {
+          min-height: 148px;
+        }
+
+        .console-entry {
+          grid-template-columns: 1fr;
+        }
+
         .launch-button {
-          width: calc(100% - 32px);
+          width: 100%;
         }
       }
     </style>
   </head>
   <body>
-    <button
-      type="button"
-      class="launch-button"
-      aria-label="启动小红书收藏管理"
-      onclick="launchConsole()"
-    >
-      启动小红书收藏管理
-    </button>
+    <form class="console-entry" aria-label="小红书收藏管理入口" onsubmit="launchConsole(); return false;">
+      <label class="search-row">
+        <input type="search" aria-label="搜索" placeholder="搜索标题、简介、作者、标签" />
+      </label>
+      <button type="submit" class="launch-button" aria-label="打开收藏管理">收藏管理</button>
+    </form>
     <script>
       function launchConsole() {
         var protocolUrl = "xhs-notion-console://start?mode=local";

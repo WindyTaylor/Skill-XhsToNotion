@@ -11,7 +11,7 @@
 - 支持对最近一次保存的页面追加野生标签。
 - 支持对最近一次保存的页面更新归属专辑。
 - 支持从 Notion 关联专辑库刷新 `album_map.json`。
-- 支持启动本地收藏管理台，在浏览器或 Notion embed 中搜索、过滤、多选并批量追加到新专辑。
+- 支持启动本地收藏管理台，在浏览器或 Notion embed 中搜索、过滤、滚动加载、多选、批量追加到新专辑，并将笔记移入 Notion 回收站。
 
 ## 文件说明
 
@@ -26,7 +26,7 @@
 | `album_map.json` | 专辑名到 Notion relation page id 的映射 |
 | `album_descriptions.json` | 专辑名到语义描述的映射，供 DeepSeek 推理参考 |
 | `update_album_map.py` | 从 Notion 数据库刷新专辑映射 |
-| `notion_manager.py` | 收藏管理台后端核心，负责查询、过滤和追加专辑 Relation |
+| `notion_manager.py` | 收藏管理台后端核心，负责查询、过滤、追加专辑 Relation 和移入回收站 |
 | `manage_server.py` | 本地 Web 收藏管理台服务入口 |
 | `start_management_console.ps1` | 一键启动本地管理台，可选启动 Cloudflare HTTPS 临时隧道 |
 | `install_console_protocol.ps1` | 注册 `xhs-notion-console://` 本机启动协议 |
@@ -145,8 +145,10 @@ http://127.0.0.1:8765
 
 - 搜索标题、简介、作者和野生标签。
 - 按标题、作者、标签、状态、当前专辑过滤。
+- 下滑自动加载更多结果。
 - 多选当前结果。
 - 选择目标专辑并批量追加。
+- 右键卡片封面，将笔记移入 Notion 回收站。
 
 批量追加使用“保留原专辑 + 追加目标专辑”的 Relation 更新方式，不会覆盖已有专辑。
 

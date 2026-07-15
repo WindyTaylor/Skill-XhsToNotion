@@ -267,6 +267,8 @@ class NotionNoteManager:
             raise NotionManagerError("请选择目标专辑。")
         if target in self.album_map:
             return target, self.album_map[target]
+        if target in self.album_id_to_name:
+            return self.album_id_to_name[target], target
 
         lowered = target.lower()
         exact = [name for name in self.album_map if name.lower() == lowered]
@@ -394,6 +396,7 @@ class NotionNoteManager:
         tag_text = _normalize(note.get("tags"))
         status_text = _normalize(note.get("status"))
         album_text = _normalize(" ".join(note.get("albums") or []))
+        album_id_text = _normalize(" ".join(note.get("album_ids") or []))
 
         if q and q not in " ".join([title_text, summary_text, author_text, tag_text]):
             return False
@@ -403,7 +406,7 @@ class NotionNoteManager:
             return False
         if tag and tag not in tag_text:
             return False
-        if album and album not in album_text:
+        if album and album not in album_text and album not in album_id_text:
             return False
         if status and status != status_text:
             return False
@@ -418,6 +421,35 @@ class NotionNoteManager:
             f"https://api.notion.com/v1/pages/{page_id}",
             json={"properties": properties},
         )
+
+    def archive_note(self, page_id):
+        page_id = (page_id or "").strip()
+        if not page_id:
+            raise NotionManagerError("缺少要删除的笔记 ID。")
+
+        page = self.get_page(page_id)
+        title = read_title(page.get("properties", {}).get(TITLE_PROP, {})) or "未命名笔记"
+        if page.get("archived") or page.get("in_trash"):
+            return {
+                "ok": True,
+                "archived": False,
+                "page_id": page_id,
+                "title": title,
+                "message": f"《{title}》已经在回收站中。",
+            }
+
+        self.request(
+            "PATCH",
+            f"https://api.notion.com/v1/pages/{page_id}",
+            json={"archived": True},
+        )
+        return {
+            "ok": True,
+            "archived": True,
+            "page_id": page_id,
+            "title": title,
+            "message": f"已将《{title}》移入 Notion 回收站。",
+        }
 
     def add_pages_to_album(self, page_ids, album_name, mode="append"):
         if mode != "append":
