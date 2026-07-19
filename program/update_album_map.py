@@ -54,6 +54,7 @@ def update_album_map():
         return
 
     ALBUM_MAP = {}
+    ALBUM_DOMAINS = {}
     properties = data.get("properties", {})
     
     # 兼容属性名可能是 "库B：专辑标签库" 或 "归属专辑" 等，用户说是内容总库里的一个属性
@@ -111,6 +112,13 @@ def update_album_map():
                             album_name = "".join([t.get("plain_text", "") for t in title_arr])
                             if album_name:
                                 ALBUM_MAP[album_name] = page_id
+                                domain_prop = page_props.get("主领域", {})
+                                if domain_prop.get("type") == "select":
+                                    domain_name = (
+                                        domain_prop.get("select") or {}
+                                    ).get("name")
+                                    if domain_name:
+                                        ALBUM_DOMAINS[album_name] = domain_name
                                 break
                                 
                 has_more = rel_data.get("has_more", False)
@@ -125,12 +133,19 @@ def update_album_map():
 
     # 格式化输出为本地 JSON 文件
     output_file = Path(__file__).parent / "album_map.json"
+    domains_file = Path(__file__).parent / "album_domains.json"
     try:
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(ALBUM_MAP, f, ensure_ascii=False, indent=4)
+        with open(domains_file, "w", encoding="utf-8") as f:
+            json.dump(ALBUM_DOMAINS, f, ensure_ascii=False, indent=4)
         
         print(f"[OK] 成功提取并更新了 {len(ALBUM_MAP)} 个专辑映射！")
         print(f"[OK] 映射字典已保存至: {output_file.absolute()}")
+        print(
+            f"[OK] 同步了 {len(ALBUM_DOMAINS)} 个专辑主领域至: "
+            f"{domains_file.absolute()}"
+        )
         
     except IOError as e:
         print(f"[FAIL] 保存文件失败: {e}")

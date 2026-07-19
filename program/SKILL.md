@@ -16,7 +16,7 @@ metadata: {"clawdbot":{"emoji":"📱→📝","requires":{"env":["NOTION_API_KEY"
 - 用户要求把最近保存的小红书笔记更新到指定专辑。
 - 用户要求描述、补充、修改某个专辑的用途或收录范围，供后续 LLM 专辑推理参考。
 - 用户要求刷新 Notion 专辑映射。
-- 用户要求打开或启动小红书收藏管理台，用于搜索、过滤、滚动加载、多选笔记、批量追加到专辑，或将笔记移入 Notion 回收站。
+- 用户要求打开或启动小红书收藏管理台，用于搜索、过滤、滚动加载、多选笔记、批量整理、维护 AI 专辑语义说明，或将笔记移入 Notion 回收站。
 
 ## 工作流程
 
@@ -120,7 +120,7 @@ python manage_server.py
 http://127.0.0.1:8765
 ```
 
-收藏管理台用于在浏览器或 Notion embed 中搜索内容总库，按标题、作者、野生标签、状态和专辑过滤，下滑加载更多结果，多选笔记后追加到目标专辑，也可通过右键卡片封面将笔记移入 Notion 回收站。追加专辑必须保留原有 Relation，不要改成覆盖式移动。
+收藏管理台用于在浏览器或 Notion embed 中搜索内容总库，按标题、作者、野生标签、状态和专辑过滤；综合搜索、标题、作者、标签支持使用 `+` 分隔多个必须同时满足的关键词。下滑加载更多结果，多选笔记后执行批量整理，可在真实 Notion 专辑库中创建专辑并指定六大「主领域」，也可按专辑页面 ID 重命名，且必须迁移本地 `album_map.json`、`album_domains.json` 和 `album_descriptions.json` 中的名称键。左侧可收起工作区用于分别维护“收录什么”“排除什么”“与相近专辑的区别”；三部分组合写入 `album_descriptions.json`。通过右键卡片封面可将笔记移入 Notion 回收站。`update_album_map.py` 应同时刷新 `album_map.json` 与 `album_domains.json`。追加专辑必须保留原有 Relation，不要改成覆盖式移动。
 
 如果用户希望从 Notion 快速打开管理台，可使用 `web/notion_launcher.html` 作为 Notion 启动页，并运行 `install_console_protocol.ps1` 注册 `xhs-notion-console://` 本机协议。Notion 页面默认只保留一个本地启动按钮，点击后尝试启动本地服务并打开 `http://127.0.0.1:8765`。注意 Notion 上传的 HTML 在沙箱 iframe 中运行，可能拦截外部协议或弹窗；按钮无反应时不要误判为本地脚本损坏，应改用直接本地地址、浏览器书签或桌面快捷方式。若用户希望 Notion 内嵌完整管理台，可让 `start_management_console.ps1` 以 `cloudflared-quick` 模式启动 Cloudflare Quick Tunnel；该地址是临时地址，固定入口需要后续配置 Named Tunnel 或云端部署。
 
@@ -163,7 +163,7 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 - 页面提取逻辑集中在 `local_extractor.py`。
 - Notion 保存、查重、DeepSeek 专辑推理、追加标签、更新专辑和专辑描述维护集中在 `xiaohongshu_to_notion_cli.py`。
 - 封面缓存与 Notion File Upload 集中在 `cover_assets.py`；CLI 和管理台共用该模块，运行时数据默认在 `program/data/`，不要提交。
-- 收藏管理台后端集中在 `notion_manager.py` 和 `manage_server.py`，前端集中在 `web/`，包含查询过滤、滚动加载、追加专辑和移入回收站能力。
+- 收藏管理台后端集中在 `notion_manager.py` 和 `manage_server.py`，前端集中在 `web/`，包含查询过滤、滚动加载、批量整理、专辑语义说明维护和移入回收站能力。
 - 专辑映射来自 `album_map.json`，可用 `update_album_map.py` 重新生成。
 - 专辑语义描述来自 `album_descriptions.json`，由 `--describe-album` / `--album-description` 更新，供 DeepSeek 推理参考。
 - Edge 扩展实现已放入 `references/4.edge_with_notion`，作为批量抓取参考，不是当前主开发路线。

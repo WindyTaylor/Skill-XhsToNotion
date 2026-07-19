@@ -8,10 +8,99 @@ const state = {
   scanned: 0,
   contextNoteId: "",
   batchBusy: false,
+  albumEditorMode: "create",
+  albumEditorTargetId: "",
+  albumEditorBusy: false,
+  albumDescriptions: [],
+  activeDescriptionAlbum: "",
+  descriptionDomain: null,
+  descriptionPanelOpen: false,
+  descriptionBusy: false,
 };
 
 const BACKGROUND_STORAGE_KEY = "xhs-notion-console-background";
+const DESCRIPTION_PANEL_STORAGE_KEY = "xhs-notion-console-description-panel";
 const MAX_BACKGROUND_BYTES = 4 * 1024 * 1024;
+const MAX_ALBUM_DESCRIPTION_LENGTH = 2000;
+const TAG_COLOR_COUNT = 9;
+const DESCRIPTION_DOCK_MEDIA = "(min-width: 1880px)";
+const ALBUM_DOMAINS = [
+  {
+    name: "🛠️ 硬核技术与职业效能",
+    icon: "🛠️",
+    label: "硬核技术",
+  },
+  {
+    name: "📸 视觉叙事与影像实验室",
+    icon: "📸",
+    label: "视觉影像",
+  },
+  {
+    name: "🦾 生活百科与生存技能",
+    icon: "🦾",
+    label: "生活技能",
+  },
+  {
+    name: "🌿 身心重塑与自我管理",
+    icon: "🌿",
+    label: "身心管理",
+  },
+  {
+    name: "📍 地理图志与探店计划",
+    icon: "📍",
+    label: "地理探店",
+  },
+  {
+    name: "🎭 奇趣碎片与小众文化",
+    icon: "🎭",
+    label: "奇趣文化",
+  },
+];
+const DESCRIPTION_SECTIONS = [
+  { key: "include", marker: "【收录什么】" },
+  { key: "exclude", marker: "【排除什么】" },
+  { key: "difference", marker: "【与相近专辑的区别】" },
+];
+
+function parseAlbumDescription(description) {
+  const text = String(description || "").trim();
+  const result = { include: "", exclude: "", difference: "" };
+  if (!text) return result;
+
+  const markers = DESCRIPTION_SECTIONS
+    .map((section) => ({
+      ...section,
+      index: text.indexOf(section.marker),
+    }))
+    .filter((section) => section.index >= 0)
+    .sort((first, second) => first.index - second.index);
+
+  if (!markers.length) {
+    result.include = text;
+    return result;
+  }
+
+  markers.forEach((section, index) => {
+    const contentStart = section.index + section.marker.length;
+    const contentEnd = markers[index + 1]?.index ?? text.length;
+    result[section.key] = text.slice(contentStart, contentEnd).trim();
+  });
+  const leadingText = text.slice(0, markers[0].index).trim();
+  if (leadingText) {
+    result.include = [leadingText, result.include].filter(Boolean).join("\n");
+  }
+  return result;
+}
+
+function composeAlbumDescription(parts) {
+  return DESCRIPTION_SECTIONS
+    .map((section) => {
+      const content = String(parts?.[section.key] || "").trim();
+      return content ? `${section.marker}\n${content}` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
 
 const el = {
   resultMeta: document.querySelector("#resultMeta"),
@@ -43,6 +132,45 @@ const el = {
   statusSelect: document.querySelector("#statusSelect"),
   albumFilterSelect: document.querySelector("#albumFilterSelect"),
   targetAlbumSelect: document.querySelector("#targetAlbumSelect"),
+  createAlbumButton: document.querySelector("#createAlbumButton"),
+  renameAlbumButton: document.querySelector("#renameAlbumButton"),
+  albumEditorBackdrop: document.querySelector("#albumEditorBackdrop"),
+  albumEditorModal: document.querySelector("#albumEditorModal"),
+  albumEditorClose: document.querySelector("#albumEditorClose"),
+  albumEditorForm: document.querySelector("#albumEditorForm"),
+  albumEditorTitle: document.querySelector("#albumEditorTitle"),
+  albumEditorSubtitle: document.querySelector("#albumEditorSubtitle"),
+  albumNameInput: document.querySelector("#albumNameInput"),
+  albumNameHint: document.querySelector("#albumNameHint"),
+  albumDomainField: document.querySelector("#albumDomainField"),
+  albumDomainSelect: document.querySelector("#albumDomainSelect"),
+  albumEditorNotice: document.querySelector("#albumEditorNotice"),
+  albumEditorCancel: document.querySelector("#albumEditorCancel"),
+  albumEditorSubmit: document.querySelector("#albumEditorSubmit"),
+  albumDescriptionPanel: document.querySelector("#albumDescriptionPanel"),
+  albumDescriptionToggle: document.querySelector("#albumDescriptionToggle"),
+  albumDescriptionClose: document.querySelector("#albumDescriptionClose"),
+  descriptionPanelBackdrop: document.querySelector("#descriptionPanelBackdrop"),
+  descriptionCompleteCount: document.querySelector("#descriptionCompleteCount"),
+  descriptionTotalCount: document.querySelector("#descriptionTotalCount"),
+  descriptionTriggerCount: document.querySelector("#descriptionTriggerCount"),
+  descriptionDomainFilters: document.querySelector("#descriptionDomainFilters"),
+  descriptionDomainAll: document.querySelector("#descriptionDomainAll"),
+  descriptionDomainMeta: document.querySelector("#descriptionDomainMeta"),
+  descriptionSearchInput: document.querySelector("#descriptionSearchInput"),
+  descriptionAlbumList: document.querySelector("#descriptionAlbumList"),
+  descriptionListEmpty: document.querySelector("#descriptionListEmpty"),
+  descriptionAlbumName: document.querySelector("#descriptionAlbumName"),
+  descriptionAlbumDomain: document.querySelector("#descriptionAlbumDomain"),
+  descriptionSaveState: document.querySelector("#descriptionSaveState"),
+  descriptionIncludeTextarea: document.querySelector("#descriptionIncludeTextarea"),
+  descriptionExcludeTextarea: document.querySelector("#descriptionExcludeTextarea"),
+  descriptionDifferenceTextarea: document.querySelector("#descriptionDifferenceTextarea"),
+  descriptionSectionProgress: document.querySelector("#descriptionSectionProgress"),
+  descriptionHint: document.querySelector(".description-hint"),
+  descriptionCharacterCount: document.querySelector("#descriptionCharacterCount"),
+  clearDescriptionButton: document.querySelector("#clearDescriptionButton"),
+  saveDescriptionButton: document.querySelector("#saveDescriptionButton"),
 };
 
 function ensureContextMenu() {
@@ -159,6 +287,8 @@ async function requestJson(url, options = {}) {
 }
 
 function populateAlbumSelects() {
+  const previousFilter = el.albumFilterSelect.value;
+  const previousTarget = el.targetAlbumSelect.value;
   const filterOptions = ['<option value="">全部</option>'];
   const targetOptions = ['<option value="">选择目标专辑</option>'];
 
@@ -171,6 +301,20 @@ function populateAlbumSelects() {
 
   el.albumFilterSelect.innerHTML = filterOptions.join("");
   el.targetAlbumSelect.innerHTML = targetOptions.join("");
+  if (
+    Array.from(el.albumFilterSelect.options).some(
+      (option) => option.value === previousFilter
+    )
+  ) {
+    el.albumFilterSelect.value = previousFilter;
+  }
+  if (
+    Array.from(el.targetAlbumSelect.options).some(
+      (option) => option.value === previousTarget
+    )
+  ) {
+    el.targetAlbumSelect.value = previousTarget;
+  }
 }
 
 function filterValue(value) {
@@ -205,6 +349,485 @@ async function loadAlbums() {
   const data = await requestJson("/api/albums");
   state.albums = data.albums || [];
   populateAlbumSelects();
+}
+
+function getSelectedTargetAlbum() {
+  const selectedValue = filterValue(el.targetAlbumSelect.value);
+  if (!selectedValue) return null;
+  return (
+    state.albums.find(
+      (album) => album.id === selectedValue || album.name === selectedValue
+    ) || null
+  );
+}
+
+function setAlbumEditorOpen(isOpen) {
+  el.albumEditorModal.classList.toggle("is-open", isOpen);
+  el.albumEditorModal.setAttribute("aria-hidden", String(!isOpen));
+  el.albumEditorBackdrop.classList.toggle("is-visible", isOpen);
+  document.body.classList.toggle("album-editor-open", isOpen);
+  if (isOpen) {
+    window.requestAnimationFrame(() => {
+      el.albumNameInput.focus();
+      el.albumNameInput.select();
+    });
+  }
+}
+
+function openAlbumEditor(mode) {
+  const targetAlbum = getSelectedTargetAlbum();
+  if (mode === "rename" && !targetAlbum) {
+    setMessage("请先选择要重命名的专辑。", "error");
+    return;
+  }
+
+  state.albumEditorMode = mode;
+  state.albumEditorTargetId = targetAlbum?.id || "";
+  const isCreate = mode === "create";
+  el.albumEditorTitle.textContent = isCreate ? "创建新专辑" : "更改专辑名称";
+  el.albumEditorSubtitle.textContent = isCreate
+    ? "新专辑会直接写入 Notion 专辑库。"
+    : `正在重命名「${targetAlbum.name}」。`;
+  el.albumNameInput.value = isCreate ? "" : targetAlbum.name;
+  el.albumNameHint.textContent = isCreate
+    ? "名称会同时显示在 Notion 和管理台中。"
+    : "重命名不会改变现有笔记关联和 AI 专辑说明。";
+  el.albumDomainField.classList.toggle("is-hidden", !isCreate);
+  el.albumDomainSelect.required = isCreate;
+  el.albumDomainSelect.value = isCreate
+    ? (ALBUM_DOMAINS.some((domain) => domain.name === state.descriptionDomain)
+        ? state.descriptionDomain
+        : "")
+    : targetAlbum.domain || "";
+  el.albumEditorNotice.textContent = isCreate
+    ? "创建后可立即用于批量追加、移动和 AI 分类。"
+    : "所有关联笔记会继续指向同一个专辑，仅显示名称发生变化。";
+  el.albumEditorSubmit.textContent = isCreate ? "创建专辑" : "保存新名称";
+  setAlbumEditorOpen(true);
+}
+
+function closeAlbumEditor({ force = false } = {}) {
+  if (state.albumEditorBusy && !force) return;
+  setAlbumEditorOpen(false);
+  state.albumEditorTargetId = "";
+}
+
+function setAlbumEditorBusy(isBusy) {
+  state.albumEditorBusy = isBusy;
+  el.albumEditorModal.classList.toggle("is-busy", isBusy);
+  el.albumEditorModal.setAttribute("aria-busy", String(isBusy));
+  el.albumNameInput.disabled = isBusy;
+  el.albumDomainSelect.disabled = isBusy;
+  el.albumEditorClose.disabled = isBusy;
+  el.albumEditorCancel.disabled = isBusy;
+  el.albumEditorSubmit.disabled = isBusy;
+  if (isBusy) {
+    el.albumEditorSubmit.dataset.idleLabel = el.albumEditorSubmit.textContent;
+    el.albumEditorSubmit.textContent =
+      state.albumEditorMode === "create" ? "正在创建..." : "正在保存...";
+  } else {
+    el.albumEditorSubmit.textContent =
+      el.albumEditorSubmit.dataset.idleLabel ||
+      (state.albumEditorMode === "create" ? "创建专辑" : "保存新名称");
+  }
+  updateSelection();
+}
+
+async function submitAlbumEditor(event) {
+  event.preventDefault();
+  if (state.albumEditorBusy) return;
+  const albumName = el.albumNameInput.value.trim();
+  if (!albumName) {
+    el.albumNameInput.focus();
+    return;
+  }
+  const isCreate = state.albumEditorMode === "create";
+  const domain = el.albumDomainSelect.value;
+  if (isCreate && !domain) {
+    el.albumDomainSelect.focus();
+    return;
+  }
+
+  setAlbumEditorBusy(true);
+  try {
+    const data = await requestJson("/api/albums", {
+      method: "POST",
+      body: JSON.stringify(
+        isCreate
+          ? { action: "create", album_name: albumName, domain }
+          : {
+              action: "rename",
+              album_name: state.albumEditorTargetId,
+              new_name: albumName,
+            }
+      ),
+    });
+    if (
+      !isCreate &&
+      state.activeDescriptionAlbum === data.old_name
+    ) {
+      state.activeDescriptionAlbum = data.album.name;
+    }
+    await loadAlbums();
+    el.targetAlbumSelect.value = data.album.id;
+    await loadAlbumDescriptions();
+    if (!isCreate) await loadNotes();
+    closeAlbumEditor({ force: true });
+    updateSelection();
+    setMessage(data.message, "success");
+  } catch (error) {
+    setMessage(error.message, "error");
+  } finally {
+    setAlbumEditorBusy(false);
+  }
+}
+
+function getActiveAlbumDescription() {
+  return state.albumDescriptions.find(
+    (album) => album.name === state.activeDescriptionAlbum
+  );
+}
+
+function setDescriptionPanelOpen(isOpen, { persist = true } = {}) {
+  state.descriptionPanelOpen = Boolean(isOpen);
+  const isDocked = window.matchMedia(DESCRIPTION_DOCK_MEDIA).matches;
+  el.albumDescriptionPanel.classList.toggle("is-open", state.descriptionPanelOpen);
+  el.albumDescriptionPanel.setAttribute(
+    "aria-hidden",
+    String(!state.descriptionPanelOpen)
+  );
+  el.albumDescriptionToggle.classList.toggle(
+    "is-hidden",
+    state.descriptionPanelOpen
+  );
+  el.albumDescriptionToggle.setAttribute(
+    "aria-expanded",
+    String(state.descriptionPanelOpen)
+  );
+  el.descriptionPanelBackdrop.classList.toggle(
+    "is-visible",
+    state.descriptionPanelOpen && !isDocked
+  );
+  document.body.classList.toggle(
+    "description-panel-overlay-open",
+    state.descriptionPanelOpen && !isDocked
+  );
+  if (persist) {
+    try {
+      localStorage.setItem(
+        DESCRIPTION_PANEL_STORAGE_KEY,
+        state.descriptionPanelOpen ? "open" : "closed"
+      );
+    } catch (error) {
+      // Panel state is a convenience only; storage failures should not block editing.
+    }
+  }
+}
+
+function restoreDescriptionPanelState() {
+  let saved = "";
+  try {
+    saved = localStorage.getItem(DESCRIPTION_PANEL_STORAGE_KEY) || "";
+  } catch (error) {
+    saved = "";
+  }
+  const defaultOpen = window.matchMedia(DESCRIPTION_DOCK_MEDIA).matches;
+  setDescriptionPanelOpen(
+    saved ? saved === "open" : defaultOpen,
+    { persist: false }
+  );
+}
+
+function getFilteredDescriptionAlbums() {
+  const query = String(el.descriptionSearchInput.value || "").trim().toLowerCase();
+  return state.albumDescriptions.filter((album) => {
+    const matchesDomain =
+      !state.descriptionDomain || album.domain === state.descriptionDomain;
+    if (!matchesDomain) return false;
+    if (!query) return true;
+    return `${album.name} ${album.description || ""}`.toLowerCase().includes(query);
+  });
+}
+
+function renderAlbumDomainFilters() {
+  const counts = new Map(
+    ALBUM_DOMAINS.map((domain) => [
+      domain.name,
+      state.albumDescriptions.filter((album) => album.domain === domain.name).length,
+    ])
+  );
+  el.descriptionDomainFilters.innerHTML = ALBUM_DOMAINS.map((domain) => {
+    const isActive = state.descriptionDomain === domain.name;
+    return `
+      <button
+        class="description-domain-button${isActive ? " is-active" : ""}"
+        type="button"
+        data-domain="${escapeAttr(domain.name)}"
+        title="${escapeAttr(domain.name)}"
+        aria-pressed="${isActive}"
+      >
+        <span class="description-domain-icon" aria-hidden="true">${domain.icon}</span>
+        <span class="description-domain-name">${domain.label}</span>
+        <span class="description-domain-count">${counts.get(domain.name) || 0}</span>
+      </button>
+    `;
+  }).join("");
+  el.descriptionDomainAll.classList.toggle(
+    "is-active",
+    state.descriptionDomain === ""
+  );
+  el.descriptionDomainAll.setAttribute(
+    "aria-pressed",
+    String(state.descriptionDomain === "")
+  );
+  const activeDomain = ALBUM_DOMAINS.find(
+    (domain) => domain.name === state.descriptionDomain
+  );
+  el.descriptionDomainMeta.textContent = activeDomain
+    ? `${activeDomain.label} · ${counts.get(activeDomain.name) || 0} 个专辑`
+    : `全部主题 · ${state.albumDescriptions.length} 个专辑`;
+}
+
+function renderAlbumDescriptionList() {
+  const filteredAlbums = getFilteredDescriptionAlbums();
+  const completedCount = state.albumDescriptions.filter(
+    (album) => Boolean(album.description)
+  ).length;
+
+  el.descriptionCompleteCount.textContent = completedCount;
+  el.descriptionTotalCount.textContent = state.albumDescriptions.length;
+  el.descriptionTriggerCount.textContent =
+    `${completedCount}/${state.albumDescriptions.length}`;
+  renderAlbumDomainFilters();
+  el.descriptionListEmpty.classList.toggle("is-visible", filteredAlbums.length === 0);
+  el.descriptionAlbumList.innerHTML = filteredAlbums
+    .map((album) => {
+      const isActive = album.name === state.activeDescriptionAlbum;
+      const parts = parseAlbumDescription(album.description);
+      const description =
+        parts.include ||
+        parts.exclude ||
+        parts.difference ||
+        "还没有填写 AI 语义说明";
+      return `
+        <button
+          class="description-album-item${isActive ? " is-active" : ""}${album.description ? " has-description" : ""}"
+          type="button"
+          role="option"
+          aria-selected="${isActive}"
+          data-album-name="${escapeAttr(album.name)}"
+        >
+          <span class="description-album-status" aria-hidden="true"></span>
+          <span class="description-album-copy">
+            <strong>${escapeHtml(album.name)}</strong>
+            <small>${escapeHtml(description)}</small>
+          </span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function getDescriptionPartsFromEditor() {
+  return {
+    include: el.descriptionIncludeTextarea.value,
+    exclude: el.descriptionExcludeTextarea.value,
+    difference: el.descriptionDifferenceTextarea.value,
+  };
+}
+
+function getDescriptionTextareas() {
+  return [
+    el.descriptionIncludeTextarea,
+    el.descriptionExcludeTextarea,
+    el.descriptionDifferenceTextarea,
+  ];
+}
+
+function updateDescriptionMetrics(parts = getDescriptionPartsFromEditor()) {
+  const description = composeAlbumDescription(parts);
+  const completedSections = Object.values(parts).filter((value) =>
+    Boolean(String(value || "").trim())
+  ).length;
+  const isOverLimit = description.length > MAX_ALBUM_DESCRIPTION_LENGTH;
+  el.descriptionSectionProgress.textContent = `已填写 ${completedSections}/3 项`;
+  el.descriptionCharacterCount.textContent = description.length;
+  el.descriptionHint.classList.toggle("is-over-limit", isOverLimit);
+  return { description, completedSections, isOverLimit };
+}
+
+function updateDescriptionEditor() {
+  const album = getActiveAlbumDescription();
+  const hasAlbum = Boolean(album);
+  const savedDescription = album?.description || "";
+  const parts = parseAlbumDescription(savedDescription);
+  el.descriptionAlbumName.textContent = album?.name || "请选择专辑";
+  el.descriptionAlbumDomain.textContent = album?.domain || "";
+  el.descriptionIncludeTextarea.value = parts.include;
+  el.descriptionExcludeTextarea.value = parts.exclude;
+  el.descriptionDifferenceTextarea.value = parts.difference;
+  getDescriptionTextareas().forEach((textarea) => {
+    textarea.disabled = !hasAlbum || state.descriptionBusy;
+  });
+  updateDescriptionMetrics(parts);
+  el.descriptionSaveState.textContent = savedDescription ? "已保存" : "尚未填写";
+  el.descriptionSaveState.classList.toggle("is-saved", Boolean(savedDescription));
+  el.descriptionSaveState.classList.remove("is-dirty");
+  el.saveDescriptionButton.disabled = true;
+  el.clearDescriptionButton.disabled =
+    !hasAlbum || !savedDescription || state.descriptionBusy;
+}
+
+function selectDescriptionDomain(domainName) {
+  const cleanDomain = String(domainName || "");
+  if (
+    cleanDomain &&
+    !ALBUM_DOMAINS.some((domain) => domain.name === cleanDomain)
+  ) {
+    return;
+  }
+  state.descriptionDomain = cleanDomain;
+  el.descriptionSearchInput.value = "";
+  const firstMatch = state.albumDescriptions.find(
+    (album) => !cleanDomain || album.domain === cleanDomain
+  );
+  if (
+    !getActiveAlbumDescription() ||
+    (cleanDomain && getActiveAlbumDescription()?.domain !== cleanDomain)
+  ) {
+    state.activeDescriptionAlbum = firstMatch?.name || "";
+  }
+  renderAlbumDescriptionList();
+  updateDescriptionEditor();
+}
+
+function selectDescriptionAlbum(albumName) {
+  if (!state.albumDescriptions.some((album) => album.name === albumName)) return;
+  state.activeDescriptionAlbum = albumName;
+  renderAlbumDescriptionList();
+  updateDescriptionEditor();
+}
+
+function handleDescriptionDraft() {
+  const album = getActiveAlbumDescription();
+  const metrics = updateDescriptionMetrics();
+  const normalizedSavedDescription = composeAlbumDescription(
+    parseAlbumDescription(album?.description || "")
+  );
+  const isDirty =
+    Boolean(album) && metrics.description !== normalizedSavedDescription;
+  el.descriptionSaveState.textContent = isDirty
+    ? metrics.isOverLimit
+      ? "内容超过上限"
+      : "有未保存修改"
+    : normalizedSavedDescription
+      ? "已保存"
+      : "尚未填写";
+  el.descriptionSaveState.classList.toggle("is-dirty", isDirty);
+  el.descriptionSaveState.classList.toggle(
+    "is-saved",
+    !isDirty && Boolean(normalizedSavedDescription)
+  );
+  el.saveDescriptionButton.disabled =
+    state.descriptionBusy ||
+    !isDirty ||
+    !metrics.description ||
+    metrics.isOverLimit;
+}
+
+function setDescriptionBusy(isBusy) {
+  state.descriptionBusy = isBusy;
+  el.albumDescriptionPanel.setAttribute("aria-busy", String(isBusy));
+  getDescriptionTextareas().forEach((textarea) => {
+    textarea.disabled = isBusy || !getActiveAlbumDescription();
+  });
+  if (isBusy) {
+    el.saveDescriptionButton.disabled = true;
+    el.clearDescriptionButton.disabled = true;
+  } else {
+    handleDescriptionDraft();
+    el.clearDescriptionButton.disabled = !getActiveAlbumDescription()?.description;
+  }
+}
+
+function applySavedAlbumDescription(updatedAlbum) {
+  const index = state.albumDescriptions.findIndex(
+    (album) => album.name === updatedAlbum.name
+  );
+  if (index >= 0) {
+    state.albumDescriptions[index] = {
+      ...state.albumDescriptions[index],
+      ...updatedAlbum,
+    };
+  }
+  renderAlbumDescriptionList();
+  updateDescriptionEditor();
+}
+
+async function saveAlbumDescription({ clear = false } = {}) {
+  const album = getActiveAlbumDescription();
+  if (!album || state.descriptionBusy) return;
+  const description = clear
+    ? ""
+    : composeAlbumDescription(getDescriptionPartsFromEditor());
+  if (!clear && !description) {
+    setMessage("专辑说明不能为空；如需删除现有说明，请使用“清空说明”。", "error");
+    return;
+  }
+  if (description.length > MAX_ALBUM_DESCRIPTION_LENGTH) {
+    setMessage(
+      `专辑说明合计不能超过 ${MAX_ALBUM_DESCRIPTION_LENGTH} 个字符。`,
+      "error"
+    );
+    return;
+  }
+  if (
+    clear &&
+    !window.confirm(
+      `确定清空「${album.name}」的 AI 专辑说明吗？\n\n清空后，AI 分类将不再获得该专辑的语义参考。`
+    )
+  ) {
+    return;
+  }
+
+  setDescriptionBusy(true);
+  el.descriptionSaveState.textContent = clear ? "正在清空..." : "正在保存...";
+  try {
+    const data = await requestJson("/api/album-descriptions", {
+      method: "POST",
+      body: JSON.stringify({
+        album_name: album.name,
+        description,
+      }),
+    });
+    applySavedAlbumDescription(data.album);
+    setMessage(data.message || "AI 专辑说明已更新。", "success");
+  } catch (error) {
+    setMessage(error.message, "error");
+    el.descriptionSaveState.textContent = "保存失败";
+    el.descriptionSaveState.classList.add("is-dirty");
+  } finally {
+    setDescriptionBusy(false);
+  }
+}
+
+async function loadAlbumDescriptions() {
+  const data = await requestJson("/api/album-descriptions");
+  state.albumDescriptions = data.albums || [];
+  const activeStillExists = state.albumDescriptions.some(
+    (album) => album.name === state.activeDescriptionAlbum
+  );
+  if (!activeStillExists) {
+    state.activeDescriptionAlbum =
+      state.albumDescriptions.find((album) => !album.description)?.name ||
+      state.albumDescriptions[0]?.name ||
+      "";
+  }
+  if (state.descriptionDomain === null) {
+    state.descriptionDomain = getActiveAlbumDescription()?.domain || "";
+  }
+  renderAlbumDescriptionList();
+  updateDescriptionEditor();
 }
 
 function updateResultMeta() {
@@ -318,11 +941,57 @@ function renderNotes() {
         event.stopPropagation();
       });
     });
+    cardEl.querySelector(".author-copy")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      copyAuthorName(event.currentTarget);
+    });
     cardEl.addEventListener("click", () => {
       hideContextMenu();
       toggleSelection(pageId, cardEl, checkbox);
     });
   });
+}
+
+async function writeClipboardText(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      // Fall back for embedded pages that deny the Clipboard API.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied =
+    typeof document.execCommand === "function" && document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("浏览器未允许复制");
+}
+
+async function copyAuthorName(button) {
+  const author = String(button.dataset.author || "").trim();
+  if (!author) return;
+  const copyState = button.querySelector(".author-copy-state");
+  try {
+    await writeClipboardText(author);
+    button.classList.add("is-copied");
+    if (copyState) copyState.textContent = "已复制";
+    setMessage(`已复制作者名：${author}`, "success");
+    window.setTimeout(() => {
+      button.classList.remove("is-copied");
+      if (copyState) copyState.textContent = "复制";
+    }, 1600);
+  } catch (error) {
+    setMessage(`复制作者名失败：${error.message}`, "error");
+  }
 }
 
 function toggleSelection(pageId, cardEl, checkbox) {
@@ -348,7 +1017,7 @@ function renderCard(note) {
   const status = note.status || "";
   const statusClass = status ? "" : "is-empty";
 
-  const tagChips = renderChips(splitTags(note.tags), "tag");
+  const tagChips = renderChips(splitTags(note.tags), "tag", { colorful: true });
   const albumChips = renderChips(note.albums || [], "tag is-album");
 
   const coverHtml = cover
@@ -363,7 +1032,23 @@ function renderCard(note) {
       </div>
       <div class="body">
         <div class="title">${escapeHtml(title)}</div>
-        ${note.author ? `<div class="author">${escapeHtml(note.author)}</div>` : ""}
+        ${
+          note.author
+            ? `
+              <button
+                class="author-copy"
+                type="button"
+                data-author="${escapeAttr(note.author)}"
+                title="点击复制作者名"
+                aria-label="复制作者名 ${escapeAttr(note.author)}"
+              >
+                <span class="author-mark" aria-hidden="true">@</span>
+                <span class="author-name">${escapeHtml(note.author)}</span>
+                <span class="author-copy-state" aria-hidden="true">复制</span>
+              </button>
+            `
+            : ""
+        }
         ${tagChips}
         ${albumChips}
         <div class="foot">
@@ -378,10 +1063,23 @@ function renderCard(note) {
   `;
 }
 
-function renderChips(items, className = "tag") {
+function stableTagColorIndex(value) {
+  let hash = 0;
+  for (const character of String(value || "")) {
+    hash = (hash * 31 + character.codePointAt(0)) | 0;
+  }
+  return Math.abs(hash) % TAG_COLOR_COUNT;
+}
+
+function renderChips(items, className = "tag", { colorful = false } = {}) {
   if (!items.length) return "";
   return `<div class="tag-list">${items
-    .map((item) => `<span class="${className}">${escapeHtml(item)}</span>`)
+    .map((item) => {
+      const colorClass = colorful
+        ? ` is-color-${stableTagColorIndex(item)}`
+        : "";
+      return `<span class="${className}${colorClass}">${escapeHtml(item)}</span>`;
+    })
     .join("")}</div>`;
 }
 
@@ -413,6 +1111,9 @@ function updateSelection() {
   el.albumActionButtons.forEach((button) => {
     button.disabled = state.batchBusy || !hasSelection || !hasAlbum;
   });
+  el.createAlbumButton.disabled = state.batchBusy || state.albumEditorBusy;
+  el.renameAlbumButton.disabled =
+    state.batchBusy || state.albumEditorBusy || !getSelectedTargetAlbum();
 }
 
 function handleTargetAlbumChange() {
@@ -620,6 +1321,16 @@ function bindEvents() {
   el.albumActionButtons.forEach((button) => {
     button.addEventListener("click", runAlbumAction);
   });
+  el.createAlbumButton.addEventListener("click", () =>
+    openAlbumEditor("create")
+  );
+  el.renameAlbumButton.addEventListener("click", () =>
+    openAlbumEditor("rename")
+  );
+  el.albumEditorForm.addEventListener("submit", submitAlbumEditor);
+  el.albumEditorClose.addEventListener("click", () => closeAlbumEditor());
+  el.albumEditorCancel.addEventListener("click", () => closeAlbumEditor());
+  el.albumEditorBackdrop.addEventListener("click", () => closeAlbumEditor());
   el.statusSelect.addEventListener("change", loadNotes);
   el.albumFilterSelect.addEventListener("change", loadNotes);
   el.targetAlbumSelect.addEventListener("change", handleTargetAlbumChange);
@@ -629,6 +1340,34 @@ function bindEvents() {
   el.backgroundInput.addEventListener("change", () => {
     handleBackgroundUpload(el.backgroundInput.files?.[0]);
   });
+  el.descriptionSearchInput.addEventListener("input", renderAlbumDescriptionList);
+  el.albumDescriptionToggle.addEventListener("click", () =>
+    setDescriptionPanelOpen(true)
+  );
+  el.albumDescriptionClose.addEventListener("click", () =>
+    setDescriptionPanelOpen(false)
+  );
+  el.descriptionPanelBackdrop.addEventListener("click", () =>
+    setDescriptionPanelOpen(false)
+  );
+  el.descriptionDomainAll.addEventListener("click", () =>
+    selectDescriptionDomain("")
+  );
+  el.descriptionDomainFilters.addEventListener("click", (event) => {
+    const button = event.target.closest(".description-domain-button");
+    if (button) selectDescriptionDomain(button.dataset.domain);
+  });
+  el.descriptionAlbumList.addEventListener("click", (event) => {
+    const button = event.target.closest(".description-album-item");
+    if (button) selectDescriptionAlbum(button.dataset.albumName);
+  });
+  getDescriptionTextareas().forEach((textarea) => {
+    textarea.addEventListener("input", handleDescriptionDraft);
+  });
+  el.saveDescriptionButton.addEventListener("click", () => saveAlbumDescription());
+  el.clearDescriptionButton.addEventListener("click", () =>
+    saveAlbumDescription({ clear: true })
+  );
 
   for (const input of [el.searchInput, el.titleInput, el.authorInput, el.tagInput]) {
     input.addEventListener("keydown", (event) => {
@@ -643,10 +1382,18 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideContextMenu();
+      if (el.albumEditorModal.classList.contains("is-open")) {
+        closeAlbumEditor();
+      } else if (state.descriptionPanelOpen) {
+        setDescriptionPanelOpen(false);
+      }
     }
   });
   window.addEventListener("blur", hideContextMenu);
-  window.addEventListener("resize", hideContextMenu);
+  window.addEventListener("resize", () => {
+    hideContextMenu();
+    setDescriptionPanelOpen(state.descriptionPanelOpen, { persist: false });
+  });
   window.addEventListener("scroll", hideContextMenu, true);
 
   if (el.loadMoreSentinel && "IntersectionObserver" in window) {
@@ -670,8 +1417,10 @@ function bindEvents() {
 async function init() {
   loadSavedBackground();
   bindEvents();
+  restoreDescriptionPanelState();
   try {
     await loadAlbums();
+    await loadAlbumDescriptions();
     await loadNotes();
   } catch (error) {
     el.resultMeta.textContent = "连接失败";

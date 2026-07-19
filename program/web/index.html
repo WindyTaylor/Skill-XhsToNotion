@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer-when-downgrade" />
     <title>小红书收藏管理台</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260719-album-create-rename" />
   </head>
   <body>
     <main class="app-shell">
+      <div class="control-dock">
       <header class="brand-row">
         <div>
           <h1>小红书收藏管理台</h1>
@@ -25,7 +26,13 @@
       <section class="search-bar" aria-label="主搜索">
         <label class="search-pill">
           <span class="sr-only">搜索</span>
-          <input id="searchInput" type="search" placeholder="搜索标题、简介、作者、标签" autocomplete="off" />
+          <input
+            id="searchInput"
+            type="search"
+            placeholder="搜索标题、简介、作者、标签；用 + 组合关键词"
+            title="输入多个关键词时用 + 分隔，结果需同时满足"
+            autocomplete="off"
+          />
           <button id="searchButton" class="pill-btn" type="button">搜索</button>
         </label>
       </section>
@@ -33,15 +40,33 @@
       <section class="filter-chips" aria-label="高级过滤">
         <span class="chip">
           <span class="chip-label">标题</span>
-          <input id="titleInput" type="text" placeholder="关键词" autocomplete="off" />
+          <input
+            id="titleInput"
+            type="text"
+            placeholder="关键词 + 关键词"
+            title="输入多个标题关键词时用 + 分隔，结果需同时满足"
+            autocomplete="off"
+          />
         </span>
         <span class="chip">
           <span class="chip-label">作者</span>
-          <input id="authorInput" type="text" placeholder="昵称" autocomplete="off" />
+          <input
+            id="authorInput"
+            type="text"
+            placeholder="昵称 + 昵称"
+            title="输入多个作者关键词时用 + 分隔，结果需同时满足"
+            autocomplete="off"
+          />
         </span>
         <span class="chip">
           <span class="chip-label">标签</span>
-          <input id="tagInput" type="text" placeholder="标签" autocomplete="off" />
+          <input
+            id="tagInput"
+            type="text"
+            placeholder="标签 + 标签"
+            title="输入多个标签时用 + 分隔，结果需同时满足"
+            autocomplete="off"
+          />
         </span>
         <span class="chip">
           <span class="chip-label">状态</span>
@@ -104,6 +129,10 @@
               <button class="album-action-button" data-album-mode="move" type="button" disabled>移动</button>
               <button class="album-action-button" data-album-mode="remove" type="button" disabled>移除</button>
             </div>
+            <div class="album-library-actions">
+              <button id="createAlbumButton" type="button">＋ 创建新专辑</button>
+              <button id="renameAlbumButton" type="button" disabled>✎ 更改名字</button>
+            </div>
           </article>
 
           <article class="bulk-action-card">
@@ -163,8 +192,154 @@
           </article>
         </div>
       </section>
+      </div>
 
       <div id="message" class="message" role="status" aria-live="polite"></div>
+
+      <button
+        id="albumDescriptionToggle"
+        class="description-dock-trigger"
+        type="button"
+        aria-controls="albumDescriptionPanel"
+        aria-expanded="false"
+      >
+        <span class="description-dock-trigger-icon" aria-hidden="true">✦</span>
+        <span class="description-dock-trigger-copy">
+          <strong>AI 专辑说明</strong>
+          <small><span id="descriptionTriggerCount">0/0</span> 已完成</small>
+        </span>
+      </button>
+      <button
+        id="descriptionPanelBackdrop"
+        class="description-panel-backdrop"
+        type="button"
+        aria-label="关闭 AI 专辑语义说明"
+        tabindex="-1"
+      ></button>
+
+      <section
+        id="albumDescriptionPanel"
+        class="album-description-panel"
+        aria-label="AI 专辑语义说明"
+        aria-hidden="true"
+      >
+        <header class="description-panel-header">
+          <div class="description-panel-title">
+            <span class="description-panel-icon" aria-hidden="true">✦</span>
+            <div>
+              <h2>AI 专辑语义说明</h2>
+              <p>按 Notion 主领域定位专辑，说明将直接参与 AI 分类。</p>
+            </div>
+          </div>
+          <div class="description-panel-tools">
+            <div class="description-progress">
+              <strong id="descriptionCompleteCount">0</strong>/<span id="descriptionTotalCount">0</span>
+            </div>
+            <button
+              id="albumDescriptionClose"
+              class="description-close-button"
+              type="button"
+              aria-label="隐藏 AI 专辑语义说明"
+              title="隐藏"
+            >×</button>
+          </div>
+        </header>
+
+        <div class="album-description-layout">
+          <aside class="description-album-browser" aria-label="专辑列表">
+            <div class="description-domain-heading">
+              <div>
+                <span>Notion 六大主题</span>
+                <small id="descriptionDomainMeta">选择主题以缩短列表</small>
+              </div>
+              <button id="descriptionDomainAll" class="description-domain-all" type="button">
+                全部
+              </button>
+            </div>
+            <div
+              id="descriptionDomainFilters"
+              class="description-domain-filters"
+              aria-label="按 Notion 主领域筛选"
+            ></div>
+            <label class="description-search">
+              <span aria-hidden="true">⌕</span>
+              <input id="descriptionSearchInput" type="search" placeholder="在当前主题中搜索" autocomplete="off" />
+            </label>
+            <div id="descriptionAlbumList" class="description-album-list" role="listbox"></div>
+            <div id="descriptionListEmpty" class="description-list-empty">没有匹配的专辑</div>
+          </aside>
+
+          <div class="description-editor">
+            <div class="description-editor-heading">
+              <div>
+                <span class="description-editor-label">当前专辑</span>
+                <h3 id="descriptionAlbumName">请选择专辑</h3>
+                <span id="descriptionAlbumDomain" class="description-album-domain"></span>
+              </div>
+              <span id="descriptionSaveState" class="description-save-state">尚未编辑</span>
+            </div>
+            <div class="description-fields" aria-label="专辑语义说明">
+              <label class="description-field">
+                <span class="description-field-heading">
+                  <span class="description-field-index" aria-hidden="true">1</span>
+                  <span>
+                    <strong>收录什么</strong>
+                    <small>定义这个专辑应该接收的内容</small>
+                  </span>
+                </span>
+                <textarea
+                  id="descriptionIncludeTextarea"
+                  maxlength="2000"
+                  placeholder="例如：拍摄主题、画面构思、姿势、场景，以及可以复刻的出片灵感。"
+                  disabled
+                ></textarea>
+              </label>
+
+              <label class="description-field">
+                <span class="description-field-heading">
+                  <span class="description-field-index is-exclude" aria-hidden="true">2</span>
+                  <span>
+                    <strong>排除什么</strong>
+                    <small>写出看似相关但不应进入的内容</small>
+                  </span>
+                </span>
+                <textarea
+                  id="descriptionExcludeTextarea"
+                  maxlength="2000"
+                  placeholder="例如：纯器材参数、后期软件教程，以及没有画面参考价值的资讯。"
+                  disabled
+                ></textarea>
+              </label>
+
+              <label class="description-field">
+                <span class="description-field-heading">
+                  <span class="description-field-index is-difference" aria-hidden="true">3</span>
+                  <span>
+                    <strong>与相近专辑的区别</strong>
+                    <small>告诉 AI 容易混淆时如何做决定</small>
+                  </span>
+                </span>
+                <textarea
+                  id="descriptionDifferenceTextarea"
+                  maxlength="2000"
+                  placeholder="例如：与“学习拍照动作”相比，本专辑关注完整画面灵感；只有具体动作拆解才归入后者。"
+                  disabled
+                ></textarea>
+              </label>
+            </div>
+            <div class="description-editor-footer">
+              <span class="description-hint">
+                <span id="descriptionSectionProgress">已填写 0/3 项</span>，保存后会组合为一份 AI 语义说明。
+                <strong id="descriptionCharacterCount">0</strong>/2000
+              </span>
+              <div class="description-editor-actions">
+                <button id="clearDescriptionButton" class="secondary-button" type="button" disabled>清空说明</button>
+                <button id="saveDescriptionButton" class="primary-button" type="button" disabled>保存说明</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section class="grid-wrap" aria-label="搜索结果">
         <div id="notesGrid" class="grid"></div>
@@ -173,6 +348,76 @@
         <div id="loadMoreSentinel" class="load-more-sentinel" aria-hidden="true"></div>
       </section>
     </main>
-    <script src="/app.js?v=20260719-batch-workspace"></script>
+
+    <button
+      id="albumEditorBackdrop"
+      class="album-editor-backdrop"
+      type="button"
+      aria-label="关闭专辑编辑窗口"
+      tabindex="-1"
+    ></button>
+    <section
+      id="albumEditorModal"
+      class="album-editor-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="albumEditorTitle"
+      aria-hidden="true"
+    >
+      <header class="album-editor-header">
+        <div>
+          <span class="album-editor-eyebrow">ALBUM LIBRARY</span>
+          <h2 id="albumEditorTitle">创建新专辑</h2>
+          <p id="albumEditorSubtitle">新专辑会直接写入 Notion 专辑库。</p>
+        </div>
+        <button
+          id="albumEditorClose"
+          class="album-editor-close"
+          type="button"
+          aria-label="关闭"
+        >×</button>
+      </header>
+
+      <form id="albumEditorForm" class="album-editor-form">
+        <label class="album-editor-field">
+          <span>专辑名称</span>
+          <input
+            id="albumNameInput"
+            type="text"
+            maxlength="100"
+            placeholder="输入清晰、可区分的专辑名称"
+            autocomplete="off"
+            required
+          />
+          <small id="albumNameHint">名称会同时显示在 Notion 和管理台中。</small>
+        </label>
+
+        <label id="albumDomainField" class="album-editor-field">
+          <span>所属主领域</span>
+          <select id="albumDomainSelect" required>
+            <option value="">选择 Notion 主领域</option>
+            <option value="🛠️ 硬核技术与职业效能">🛠️ 硬核技术与职业效能</option>
+            <option value="📸 视觉叙事与影像实验室">📸 视觉叙事与影像实验室</option>
+            <option value="🦾 生活百科与生存技能">🦾 生活百科与生存技能</option>
+            <option value="🌿 身心重塑与自我管理">🌿 身心重塑与自我管理</option>
+            <option value="📍 地理图志与探店计划">📍 地理图志与探店计划</option>
+            <option value="🎭 奇趣碎片与小众文化">🎭 奇趣碎片与小众文化</option>
+          </select>
+          <small>用于决定新专辑出现在 Notion 六大板块中的位置。</small>
+        </label>
+
+        <div class="album-editor-notice">
+          <span aria-hidden="true">i</span>
+          <p id="albumEditorNotice">创建后可立即用于批量追加、移动和 AI 分类。</p>
+        </div>
+
+        <div class="album-editor-actions">
+          <button id="albumEditorCancel" class="secondary-button" type="button">取消</button>
+          <button id="albumEditorSubmit" class="primary-button" type="submit">创建专辑</button>
+        </div>
+      </form>
+    </section>
+
+    <script src="/app.js?v=20260719-album-create-rename"></script>
   </body>
 </html>

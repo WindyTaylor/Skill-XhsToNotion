@@ -13,7 +13,7 @@
 - 未配置 DeepSeek 或调用失败时，自动退回本地关键词规则兜底分类。
 - 支持保存后追加野生标签、更新归属专辑、按最近一次候选序号改选专辑。
 - 支持从 Notion 专辑库刷新 `album_map.json`。
-- 提供本地嵌入式收藏管理台，可搜索、过滤、滚动加载、多选笔记、批量追加到新专辑，并将笔记移入 Notion 回收站。
+- 提供本地嵌入式收藏管理台，可搜索、过滤、滚动加载、多选笔记、批量整理、维护 AI 专辑语义说明，并将笔记移入 Notion 回收站。
 - 可作为 Codex/OpenClaw skill 使用，适合接收 QQ 小红书卡片中的完整 `jump_url`。
 
 ## 目录结构
@@ -31,6 +31,7 @@
 │   ├── configure.py                  # 写入本地配置
 │   ├── config_template.json          # 配置模板
 │   ├── album_map.json                # 专辑名到 Notion page id 的映射
+│   ├── album_domains.json            # 专辑名到 Notion 主领域的映射
 │   ├── album_descriptions.json       # 专辑语义描述，供 LLM 分类参考
 │   ├── SKILL.md                      # Codex/OpenClaw skill 说明
 │   ├── web/                          # 嵌入式收藏管理台前端
@@ -198,7 +199,7 @@ python program/manage_server.py
 http://127.0.0.1:8765
 ```
 
-管理台支持搜索标题、简介、作者、野生标签，按状态和专辑过滤，下滑自动加载更多结果，多选结果后追加到目标专辑。追加专辑会保留原有专辑 Relation，不会覆盖原分类；右键卡片封面可将笔记移入 Notion 回收站。
+管理台支持搜索标题、简介、作者、野生标签，文本搜索属性可用 `+` 分隔多个必须同时满足的关键词；也可按状态和专辑过滤，下滑自动加载更多结果，多选结果后执行批量整理，在真实 Notion 专辑库中创建或重命名专辑，并在左侧可收起工作区中维护 `album_descriptions.json`。专辑说明按 Notion「主领域」的六大主题分类定位；追加专辑会保留原有专辑 Relation，不会覆盖原分类；右键卡片封面可将笔记移入 Notion 回收站。
 
 如需放入 Notion 页面，可在 Notion 中创建页面后使用 `/embed` 嵌入上述地址。若 Notion 客户端无法嵌入本地地址，先直接用浏览器打开管理台。
 

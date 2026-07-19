@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -26,6 +27,8 @@ except ImportError:  # pragma: no cover - urllib3 is a requests dependency in no
 PROGRAM_DIR = Path(__file__).parent
 CONFIG_FILE = PROGRAM_DIR / "config.json"
 ALBUM_MAP_FILE = PROGRAM_DIR / "album_map.json"
+ALBUM_DESCRIPTIONS_FILE = PROGRAM_DIR / "album_descriptions.json"
+ALBUM_DOMAINS_FILE = PROGRAM_DIR / "album_domains.json"
 
 TITLE_PROP = "标题"
 URL_PROP = "小红书链接"
@@ -67,6 +70,18 @@ DEFAULT_NOTION_TIMEOUT = 15
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 200
 DEFAULT_MAX_SCAN = 500
+MAX_ALBUM_DESCRIPTION_LENGTH = 2000
+MAX_ALBUM_NAME_LENGTH = 100
+ALBUM_DESCRIPTIONS_LOCK = threading.Lock()
+ALBUM_METADATA_LOCK = threading.Lock()
+VALID_ALBUM_DOMAINS = (
+    "🛠️ 硬核技术与职业效能",
+    "📸 视觉叙事与影像实验室",
+    "🦾 生活百科与生存技能",
+    "🌿 身心重塑与自我管理",
+    "📍 地理图志与探店计划",
+    "🎭 奇趣碎片与小众文化",
+)
 
 
 class NotionManagerError(Exception):
@@ -95,6 +110,17 @@ def _compact_text(value):
 
 def _normalize(value):
     return _compact_text(value).lower()
+
+
+def split_filter_terms(value):
+    terms = []
+    seen = set()
+    for part in re.split(r"[+＋]", str(value or "")):
+        term = _normalize(part)
+        if term and term not in seen:
+            terms.append(term)
+            seen.add(term)
+    return terms
 
 
 def _load_json_file(path):
@@ -162,6 +188,85 @@ def load_album_map():
         if clean_name and clean_id and clean_id != "id_fallback":
             albums[clean_name] = clean_id
     return albums
+
+
+def load_album_descriptions(path=ALBUM_DESCRIPTIONS_FILE):
+    try:
+        data = _load_json_file(path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise NotionManagerError(f"读取专辑描述失败: {exc}") from exc
+    return {
+        str(name).strip(): str(description).strip()
+        for name, description in data.items()
+        if str(name).strip() and str(description).strip()
+    }
+
+
+def load_album_domains(path=ALBUM_DOMAINS_FILE):
+    try:
+        data = _load_json_file(path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise NotionManagerError(f"读取专辑主领域失败: {exc}") from exc
+    return {
+        str(name).strip(): str(domain).strip()
+        for name, domain in data.items()
+        if str(name).strip() and str(domain).strip()
+    }
+
+
+def save_album_descriptions(descriptions, path=ALBUM_DESCRIPTIONS_FILE):
+    clean_descriptions = {
+        str(name).strip(): str(description).strip()
+        for name, description in descriptions.items()
+        if str(name).strip() and str(description).strip()
+    }
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(clean_descriptions, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(temp_path, path)
+    except OSError as exc:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise NotionManagerError(f"保存专辑描述失败: {exc}") from exc
+
+
+def save_album_map(album_map, path=ALBUM_MAP_FILE):
+    clean_map = {
+        str(name).strip(): str(album_id).strip()
+        for name, album_id in album_map.items()
+        if str(name).strip() and str(album_id).strip()
+    }
+    _save_json_mapping(clean_map, path, "保存专辑映射失败")
+
+
+def save_album_domains(domains, path=ALBUM_DOMAINS_FILE):
+    clean_domains = {
+        str(name).strip(): str(domain).strip()
+        for name, domain in domains.items()
+        if str(name).strip() and str(domain).strip()
+    }
+    _save_json_mapping(clean_domains, path, "保存专辑主领域失败")
+
+
+def _save_json_mapping(mapping, path, error_label):
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(temp_path, path)
+    except OSError as exc:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise NotionManagerError(f"{error_label}: {exc}") from exc
 
 
 def read_title(prop):
@@ -332,10 +437,270 @@ class NotionNoteManager:
         return {}
 
     def list_albums(self):
+        domain_file = getattr(self, "album_domains_file", ALBUM_DOMAINS_FILE)
+        album_domains = load_album_domains(domain_file)
         return [
-            {"name": name, "id": album_id}
+            {
+                "name": name,
+                "id": album_id,
+                "domain": album_domains.get(name, ""),
+            }
             for name, album_id in sorted(self.album_map.items(), key=lambda item: item[0])
         ]
+
+    def get_album_source_context(self):
+        cached_context = getattr(self, "album_source_context", None)
+        if cached_context:
+            return cached_context
+
+        content_source_id = self.data_source_id
+        if not content_source_id:
+            database = self.request(
+                "GET",
+                f"https://api.notion.com/v1/databases/{self.database_id}",
+            )
+            data_sources = database.get("data_sources") or []
+            content_source_id = data_sources[0].get("id") if data_sources else ""
+            self.data_source_id = content_source_id or ""
+        if not content_source_id:
+            raise NotionManagerError("无法定位 Notion 内容总库的数据源。")
+
+        content_source = self.request(
+            "GET",
+            f"https://api.notion.com/v1/data_sources/{content_source_id}",
+        )
+        album_relation = (
+            (content_source.get("properties") or {})
+            .get(ALBUM_PROP, {})
+            .get("relation")
+            or {}
+        )
+        album_source_id = album_relation.get("data_source_id")
+        if not album_source_id:
+            raise NotionManagerError("无法定位 Notion 专辑库的数据源。")
+
+        album_source = self.request(
+            "GET",
+            f"https://api.notion.com/v1/data_sources/{album_source_id}",
+        )
+        properties = album_source.get("properties") or {}
+        title_property = next(
+            (
+                name
+                for name, prop in properties.items()
+                if prop.get("type") == "title"
+            ),
+            "",
+        )
+        if not title_property:
+            raise NotionManagerError("Notion 专辑库缺少标题属性。")
+
+        domain_property = (
+            "主领域"
+            if (properties.get("主领域") or {}).get("type") == "select"
+            else ""
+        )
+        context = {
+            "data_source_id": album_source_id,
+            "title_property": title_property,
+            "domain_property": domain_property,
+        }
+        self.album_source_context = context
+        return context
+
+    def validate_new_album_name(self, album_name, *, exclude_album_id=""):
+        clean_name = _compact_text(album_name)
+        if not clean_name:
+            raise NotionManagerError("请输入专辑名称。")
+        if len(clean_name) > MAX_ALBUM_NAME_LENGTH:
+            raise NotionManagerError(
+                f"专辑名称不能超过 {MAX_ALBUM_NAME_LENGTH} 个字符。"
+            )
+        lowered = clean_name.casefold()
+        duplicate = next(
+            (
+                name
+                for name, album_id in self.album_map.items()
+                if album_id != exclude_album_id and name.casefold() == lowered
+            ),
+            "",
+        )
+        if duplicate:
+            raise NotionManagerError(f"专辑名称已存在: {duplicate}")
+        return clean_name
+
+    def create_album(self, album_name, domain):
+        clean_name = self.validate_new_album_name(album_name)
+        clean_domain = _compact_text(domain)
+        if clean_domain not in VALID_ALBUM_DOMAINS:
+            raise NotionManagerError("请选择有效的专辑主领域。")
+
+        context = self.get_album_source_context()
+        properties = {
+            context["title_property"]: {
+                "title": [{"type": "text", "text": {"content": clean_name}}]
+            }
+        }
+        if context["domain_property"]:
+            properties[context["domain_property"]] = {
+                "select": {"name": clean_domain}
+            }
+
+        page = self.request(
+            "POST",
+            "https://api.notion.com/v1/pages",
+            json={
+                "parent": {
+                    "type": "data_source_id",
+                    "data_source_id": context["data_source_id"],
+                },
+                "properties": properties,
+            },
+        )
+        album_id = page.get("id")
+        if not album_id:
+            raise NotionManagerError("Notion 已响应，但未返回新专辑页面 ID。")
+
+        album_map_file = getattr(self, "album_map_file", ALBUM_MAP_FILE)
+        domain_file = getattr(self, "album_domains_file", ALBUM_DOMAINS_FILE)
+        with ALBUM_METADATA_LOCK:
+            album_domains = load_album_domains(domain_file)
+            self.album_map[clean_name] = album_id
+            self.album_id_to_name[album_id] = clean_name
+            album_domains[clean_name] = clean_domain
+            save_album_map(self.album_map, album_map_file)
+            save_album_domains(album_domains, domain_file)
+
+        return {
+            "ok": True,
+            "album": {
+                "name": clean_name,
+                "id": album_id,
+                "domain": clean_domain,
+            },
+            "message": f"已创建专辑「{clean_name}」。",
+        }
+
+    def rename_album(self, album_name, new_name):
+        old_name, album_id = self.resolve_album(album_name)
+        clean_name = self.validate_new_album_name(
+            new_name,
+            exclude_album_id=album_id,
+        )
+        if clean_name == old_name:
+            raise NotionManagerError("新名称与当前专辑名称相同。")
+
+        context = self.get_album_source_context()
+        self.request(
+            "PATCH",
+            f"https://api.notion.com/v1/pages/{album_id}",
+            json={
+                "properties": {
+                    context["title_property"]: {
+                        "title": [
+                            {"type": "text", "text": {"content": clean_name}}
+                        ]
+                    }
+                }
+            },
+        )
+
+        album_map_file = getattr(self, "album_map_file", ALBUM_MAP_FILE)
+        domain_file = getattr(self, "album_domains_file", ALBUM_DOMAINS_FILE)
+        description_file = getattr(
+            self,
+            "album_descriptions_file",
+            ALBUM_DESCRIPTIONS_FILE,
+        )
+        with ALBUM_METADATA_LOCK, ALBUM_DESCRIPTIONS_LOCK:
+            album_domains = load_album_domains(domain_file)
+            descriptions = load_album_descriptions(description_file)
+            domain = album_domains.pop(old_name, "")
+            description = descriptions.pop(old_name, "")
+            self.album_map.pop(old_name, None)
+            self.album_map[clean_name] = album_id
+            self.album_id_to_name[album_id] = clean_name
+            if domain:
+                album_domains[clean_name] = domain
+            if description:
+                descriptions[clean_name] = description
+            save_album_map(self.album_map, album_map_file)
+            save_album_domains(album_domains, domain_file)
+            save_album_descriptions(descriptions, description_file)
+
+        return {
+            "ok": True,
+            "album": {
+                "name": clean_name,
+                "id": album_id,
+                "domain": domain,
+            },
+            "old_name": old_name,
+            "message": f"已将专辑「{old_name}」重命名为「{clean_name}」。",
+        }
+
+    def list_album_descriptions(self):
+        description_file = getattr(
+            self,
+            "album_descriptions_file",
+            ALBUM_DESCRIPTIONS_FILE,
+        )
+        domain_file = getattr(self, "album_domains_file", ALBUM_DOMAINS_FILE)
+        with ALBUM_DESCRIPTIONS_LOCK:
+            descriptions = load_album_descriptions(description_file)
+        album_domains = load_album_domains(domain_file)
+        albums = [
+            {
+                "name": name,
+                "id": album_id,
+                "domain": album_domains.get(name, ""),
+                "description": descriptions.get(name, ""),
+            }
+            for name, album_id in sorted(self.album_map.items(), key=lambda item: item[0])
+        ]
+        return {
+            "albums": albums,
+            "described": sum(bool(item["description"]) for item in albums),
+            "total": len(albums),
+        }
+
+    def update_album_description(self, album_name, description):
+        clean_name = _compact_text(album_name)
+        if clean_name not in self.album_map:
+            raise NotionManagerError(f"找不到专辑: {clean_name or '未指定'}")
+
+        clean_description = str(description or "").strip()
+        if len(clean_description) > MAX_ALBUM_DESCRIPTION_LENGTH:
+            raise NotionManagerError(
+                f"专辑描述不能超过 {MAX_ALBUM_DESCRIPTION_LENGTH} 个字符。"
+            )
+
+        description_file = getattr(
+            self,
+            "album_descriptions_file",
+            ALBUM_DESCRIPTIONS_FILE,
+        )
+        with ALBUM_DESCRIPTIONS_LOCK:
+            descriptions = load_album_descriptions(description_file)
+            if clean_description:
+                descriptions[clean_name] = clean_description
+            else:
+                descriptions.pop(clean_name, None)
+            save_album_descriptions(descriptions, description_file)
+
+        action = "保存" if clean_description else "清空"
+        domain_file = getattr(self, "album_domains_file", ALBUM_DOMAINS_FILE)
+        album_domains = load_album_domains(domain_file)
+        return {
+            "ok": True,
+            "album": {
+                "name": clean_name,
+                "id": self.album_map[clean_name],
+                "domain": album_domains.get(clean_name, ""),
+                "description": clean_description,
+            },
+            "message": f"已{action}「{clean_name}」的 AI 专辑说明。",
+        }
 
     def fetch_cover_for_page(self, page_id):
         """Fetch a single page and return its cover URL.
@@ -537,10 +902,10 @@ class NotionNoteManager:
         }
 
     def matches_filters(self, note, filters):
-        q = _normalize(filters.get("q"))
-        title = _normalize(filters.get("title"))
-        author = _normalize(filters.get("author"))
-        tag = _normalize(filters.get("tag"))
+        q_terms = split_filter_terms(filters.get("q"))
+        title_terms = split_filter_terms(filters.get("title"))
+        author_terms = split_filter_terms(filters.get("author"))
+        tag_terms = split_filter_terms(filters.get("tag"))
         album = _normalize(filters.get("album"))
         status = _normalize(filters.get("status"))
 
@@ -552,13 +917,16 @@ class NotionNoteManager:
         album_text = _normalize(" ".join(note.get("albums") or []))
         album_id_text = _normalize(" ".join(note.get("album_ids") or []))
 
-        if q and q not in " ".join([title_text, summary_text, author_text, tag_text]):
+        searchable_text = " ".join(
+            [title_text, summary_text, author_text, tag_text]
+        )
+        if q_terms and not all(term in searchable_text for term in q_terms):
             return False
-        if title and title not in title_text:
+        if title_terms and not all(term in title_text for term in title_terms):
             return False
-        if author and author not in author_text:
+        if author_terms and not all(term in author_text for term in author_terms):
             return False
-        if tag and tag not in tag_text:
+        if tag_terms and not all(term in tag_text for term in tag_terms):
             return False
         if album and album not in album_text and album not in album_id_text:
             return False

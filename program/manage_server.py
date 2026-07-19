@@ -47,6 +47,9 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         if path == "/api/albums":
             self.handle_api(lambda: {"albums": self.manager.list_albums()})
             return
+        if path == "/api/album-descriptions":
+            self.handle_api(self.manager.list_album_descriptions)
+            return
         if path == "/api/notes":
             self.handle_api(lambda: self.manager.query_notes(query))
             return
@@ -64,12 +67,44 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = parse_query(self.path)
+        if path == "/api/albums":
+            body = self.read_json_body()
+            action = body.get("action", "")
+            if action == "create":
+                self.handle_api(
+                    lambda: self.manager.create_album(
+                        body.get("album_name", ""),
+                        body.get("domain", ""),
+                    )
+                )
+            elif action == "rename":
+                self.handle_api(
+                    lambda: self.manager.rename_album(
+                        body.get("album_name", ""),
+                        body.get("new_name", ""),
+                    )
+                )
+            else:
+                self.write_json(
+                    {"ok": False, "error": "不支持的专辑操作。"},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            return
         if path == "/api/notes/batch":
             body = self.read_json_body()
             self.handle_api(
                 lambda: self.manager.run_batch_action(
                     body.get("action", ""),
                     body,
+                )
+            )
+            return
+        if path == "/api/album-descriptions":
+            body = self.read_json_body()
+            self.handle_api(
+                lambda: self.manager.update_album_description(
+                    body.get("album_name", ""),
+                    body.get("description", ""),
                 )
             )
             return

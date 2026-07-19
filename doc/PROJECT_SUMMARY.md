@@ -42,7 +42,7 @@ Updated: 2026-07-10
 
 - `program/notion_manager.py`：查询 Notion 内容总库、按标题/作者/标签/状态/专辑过滤、批量追加专辑 Relation，并将笔记移入 Notion 回收站。
 - `program/manage_server.py`：本地 HTTP 服务，默认监听 `http://127.0.0.1:8765`。
-- `program/web/`：管理台前端，包含搜索框、过滤器、结果卡片、滚动加载、多选、追加到专辑和右键移入回收站操作。
+- `program/web/`：管理台前端，包含搜索框、过滤器、结果卡片、滚动加载、多选、批量整理、按 Notion 六大主领域分组的左侧可收起 AI 专辑语义说明工作区，以及右键移入回收站操作。
 - `program/web/notion_launcher.html`：可上传或嵌入 Notion 的轻量启动页，通过 `xhs-notion-console://` 唤起本机脚本并打开本地管理台。
 - `program/start_management_console.ps1`：一键启动本地管理台，可选启动 Cloudflare Quick Tunnel。
 - `program/install_console_protocol.ps1`：注册 Windows 用户级 `xhs-notion-console://` 协议。
