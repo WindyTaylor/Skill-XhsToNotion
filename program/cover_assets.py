@@ -437,7 +437,12 @@ class CoverAssetService:
         asset = self.store.cache_from_url(source_url, page_id=page_id, force=force)
         return self._response(asset)
 
-    def upload_cached_asset(self, asset_id: str, page_id: str = "") -> Dict[str, Any]:
+    def upload_cached_asset(
+        self,
+        asset_id: str,
+        page_id: str = "",
+        force_upload: bool = False,
+    ) -> Dict[str, Any]:
         if not self.uploader:
             raise CoverAssetError("Notion uploader is not configured.")
         asset = self.store.get_asset(asset_id)
@@ -445,7 +450,7 @@ class CoverAssetService:
             raise CoverAssetError(f"Unknown cover asset: {asset_id}")
 
         file_upload_id = asset.get("notion_file_upload_id")
-        if not file_upload_id:
+        if force_upload or not file_upload_id:
             uploaded = self.uploader.upload_file(
                 self.store.file_path_for_asset(asset),
                 asset.get("content_type") or "application/octet-stream",
@@ -464,9 +469,14 @@ class CoverAssetService:
         source_url: str,
         page_id: str,
         force_cache: bool = False,
+        force_upload: bool = False,
     ) -> Dict[str, Any]:
         asset_response = self.cache_cover(source_url, page_id=page_id, force=force_cache)
-        return self.upload_cached_asset(asset_response["id"], page_id=page_id)
+        return self.upload_cached_asset(
+            asset_response["id"],
+            page_id=page_id,
+            force_upload=force_upload,
+        )
 
     def _response(self, asset: Dict[str, Any]) -> Dict[str, Any]:
         return {

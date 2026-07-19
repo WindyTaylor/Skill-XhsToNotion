@@ -3,7 +3,9 @@
 
 import json
 import os
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 
@@ -31,7 +33,33 @@ SUMMARY_PROP = "简介"
 AUTHOR_PROP = "作者"
 STATUS_PROP = "状态"
 TAGS_PROP = "野生标签"
+COLOR_TAGS_PROP = "彩色标签"
 ALBUM_PROP = "库B：专辑标签库"
+COVER_URL_PROP = "封面"
+
+VALID_STATUSES = (
+    "待阅读",
+    "待路由",
+    "已整理",
+    "已沉淀",
+    "已实践",
+    "长期参考",
+    "已废弃",
+)
+MAX_BATCH_SIZE = 100
+MAX_AI_BATCH_SIZE = 20
+INVALID_TAGS = {
+    "-",
+    "--",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "undefined",
+    "无",
+    "未知",
+    "无标签",
+}
 
 DEFAULT_NOTION_VERSION = "2025-09-03"
 DEFAULT_NOTION_FILE_UPLOAD_VERSION = "2026-03-11"
@@ -167,6 +195,84 @@ def read_cover_url(page):
 def read_status(prop):
     status = prop.get("select") or {}
     return status.get("name") or ""
+
+
+def read_multi_select(prop):
+    return [
+        item.get("name", "").strip()
+        for item in prop.get("multi_select", [])
+        if item.get("name", "").strip()
+    ]
+
+
+def rich_text_payload(value):
+    text = str(value or "").strip()
+    if not text:
+        return {"rich_text": []}
+    chunks = [text[index:index + 2000] for index in range(0, len(text), 2000)]
+    return {
+        "rich_text": [
+            {"type": "text", "text": {"content": chunk}}
+            for chunk in chunks
+        ]
+    }
+
+
+def title_payload(value):
+    text = str(value or "").strip()[:2000]
+    return {
+        "title": (
+            [{"type": "text", "text": {"content": text}}]
+            if text
+            else []
+        )
+    }
+
+
+def normalize_tags(values):
+    if isinstance(values, str):
+        raw_items = re.split(r"[,，、;；\n]+", values)
+    else:
+        raw_items = list(values or [])
+
+    clean_items = []
+    seen = set()
+    for item in raw_items:
+        clean = re.sub(r"\s+", " ", str(item or "")).strip(" #＃,，、;；")
+        if not clean or clean.casefold() in INVALID_TAGS:
+            continue
+        clean = clean[:80]
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        clean_items.append(clean)
+    return clean_items[:100]
+
+
+def canonical_duplicate_key(note):
+    source_url = str(note.get("url") or "").strip()
+    if source_url:
+        try:
+            parsed = urlsplit(source_url)
+            match = re.search(
+                r"/(?:explore|discovery/item|board/[^/]+)/([a-zA-Z0-9]+)",
+                parsed.path,
+            )
+            if match:
+                return f"xhs:{match.group(1).lower()}"
+            host = parsed.netloc.lower().removeprefix("www.")
+            path = parsed.path.rstrip("/").lower()
+            if host and path:
+                return f"url:{host}{path}"
+        except ValueError:
+            pass
+
+    title = _normalize(note.get("title"))
+    author = _normalize(note.get("author"))
+    if title:
+        return f"text:{title}|{author}"
+    return ""
 
 
 class NotionNoteManager:
@@ -420,9 +526,11 @@ class NotionNoteManager:
             "summary": read_rich_text(props.get(SUMMARY_PROP, {})),
             "author": read_rich_text(props.get(AUTHOR_PROP, {})),
             "tags": read_rich_text(props.get(TAGS_PROP, {})),
+            "color_tags": read_multi_select(props.get(COLOR_TAGS_PROP, {})),
             "status": read_status(props.get(STATUS_PROP, {})),
             "albums": albums,
             "album_ids": album_ids,
+            "cover_source": read_url(props.get(COVER_URL_PROP, {})),
             "notion_url": page.get("url", ""),
             "created_time": page.get("created_time", ""),
             "last_edited_time": page.get("last_edited_time", ""),
@@ -468,6 +576,36 @@ class NotionNoteManager:
             json={"properties": properties},
         )
 
+    def patch_page(self, page_id, properties=None, cover=None):
+        payload = {}
+        if properties:
+            payload["properties"] = properties
+        if cover:
+            payload["cover"] = cover
+        if not payload:
+            return {}
+        return self.request(
+            "PATCH",
+            f"https://api.notion.com/v1/pages/{page_id}",
+            json=payload,
+        )
+
+    def validate_page_ids(self, page_ids, max_items=MAX_BATCH_SIZE):
+        if not isinstance(page_ids, list):
+            raise NotionManagerError("page_ids 必须是数组。")
+        unique_ids = []
+        seen = set()
+        for page_id in page_ids:
+            clean_id = str(page_id or "").strip()
+            if clean_id and clean_id not in seen:
+                seen.add(clean_id)
+                unique_ids.append(clean_id)
+        if not unique_ids:
+            raise NotionManagerError("请选择至少一篇笔记。")
+        if len(unique_ids) > max_items:
+            raise NotionManagerError(f"单次最多处理 {max_items} 篇笔记。")
+        return unique_ids
+
     def archive_note(self, page_id):
         page_id = (page_id or "").strip()
         if not page_id:
@@ -498,12 +636,10 @@ class NotionNoteManager:
         }
 
     def add_pages_to_album(self, page_ids, album_name, mode="append"):
-        if mode != "append":
-            raise NotionManagerError("第一版只支持追加到专辑，暂不支持移动。")
+        if mode not in {"append", "move", "remove"}:
+            raise NotionManagerError("专辑操作仅支持追加、移动或移除。")
 
-        if not isinstance(page_ids, list) or not page_ids:
-            raise NotionManagerError("请选择至少一篇笔记。")
-
+        page_ids = self.validate_page_ids(page_ids)
         resolved_album_name, target_album_id = self.resolve_album(album_name)
         updated = 0
         skipped = 0
@@ -519,30 +655,471 @@ class NotionNoteManager:
 
                 relations = relation_prop.get("relation", [])
                 relation_ids = [item.get("id") for item in relations if item.get("id")]
-                if target_album_id in relation_ids:
-                    skipped += 1
-                    continue
+                if mode == "append":
+                    if target_album_id in relation_ids:
+                        skipped += 1
+                        continue
+                    new_relation_ids = relation_ids + [target_album_id]
+                elif mode == "move":
+                    if relation_ids == [target_album_id]:
+                        skipped += 1
+                        continue
+                    new_relation_ids = [target_album_id]
+                else:
+                    if target_album_id not in relation_ids:
+                        skipped += 1
+                        continue
+                    new_relation_ids = [
+                        relation_id
+                        for relation_id in relation_ids
+                        if relation_id != target_album_id
+                    ]
 
-                new_relations = [{"id": relation_id} for relation_id in relation_ids]
-                new_relations.append({"id": target_album_id})
                 self.patch_page_properties(
                     page_id,
-                    {ALBUM_PROP: {"relation": new_relations}},
+                    {
+                        ALBUM_PROP: {
+                            "relation": [
+                                {"id": relation_id}
+                                for relation_id in new_relation_ids
+                            ]
+                        }
+                    },
                 )
                 updated += 1
             except Exception as exc:  # Keep batch operations best-effort.
                 failed += 1
                 failures.append({"page_id": page_id, "error": str(exc)})
 
+        action_text = {
+            "append": "追加到",
+            "move": "移动到",
+            "remove": "从中移除",
+        }[mode]
         return {
             "ok": failed == 0,
+            "action": "album",
+            "mode": mode,
             "album_name": resolved_album_name,
             "updated": updated,
             "skipped": skipped,
             "failed": failed,
             "failures": failures,
             "message": (
-                f"已将 {updated} 篇笔记追加到 {resolved_album_name}，"
-                f"{skipped} 篇原本已在该专辑中，{failed} 篇失败。"
+                f"已将 {updated} 篇笔记{action_text}「{resolved_album_name}」，"
+                f"{skipped} 篇无需修改，{failed} 篇失败。"
             ),
         }
+
+    def update_pages_status(self, page_ids, status):
+        page_ids = self.validate_page_ids(page_ids)
+        status = str(status or "").strip()
+        if status not in VALID_STATUSES:
+            raise NotionManagerError(f"不支持的状态：{status or '空'}")
+
+        updated = 0
+        skipped = 0
+        failures = []
+        for page_id in page_ids:
+            try:
+                page = self.get_page(page_id)
+                current_status = read_status(
+                    page.get("properties", {}).get(STATUS_PROP, {})
+                )
+                if current_status == status:
+                    skipped += 1
+                    continue
+                self.patch_page_properties(
+                    page_id,
+                    {STATUS_PROP: {"select": {"name": status}}},
+                )
+                updated += 1
+            except Exception as exc:
+                failures.append({"page_id": page_id, "error": str(exc)})
+
+        failed = len(failures)
+        return {
+            "ok": failed == 0,
+            "action": "status",
+            "status": status,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "failures": failures,
+            "message": (
+                f"已将 {updated} 篇笔记改为「{status}」，"
+                f"{skipped} 篇无需修改，{failed} 篇失败。"
+            ),
+        }
+
+    def rerun_ai_classification(self, page_ids):
+        page_ids = self.validate_page_ids(page_ids, max_items=MAX_AI_BATCH_SIZE)
+        try:
+            from xiaohongshu_to_notion_cli import recommend_albums
+        except ImportError as exc:
+            raise NotionManagerError(f"AI 分类模块加载失败：{exc}") from exc
+
+        updated = 0
+        skipped = 0
+        failures = []
+        classifications = []
+
+        for page_id in page_ids:
+            try:
+                page = self.get_page(page_id)
+                note = self.page_to_note(page)
+                candidates = recommend_albums(
+                    {
+                        "title": note.get("title", ""),
+                        "summary": note.get("summary", ""),
+                        "author": note.get("author", ""),
+                        "tags": note.get("tags", ""),
+                    }
+                )
+                if not candidates:
+                    raise NotionManagerError("没有得到有效的专辑候选。")
+                chosen = candidates[0]
+                album_name, album_id = self.resolve_album(chosen.get("name"))
+                if note.get("album_ids") == [album_id]:
+                    skipped += 1
+                else:
+                    self.patch_page_properties(
+                        page_id,
+                        {ALBUM_PROP: {"relation": [{"id": album_id}]}},
+                    )
+                    updated += 1
+                classifications.append(
+                    {
+                        "page_id": page_id,
+                        "title": note.get("title", ""),
+                        "album_name": album_name,
+                        "reason": chosen.get("reason", ""),
+                    }
+                )
+            except Exception as exc:
+                failures.append({"page_id": page_id, "error": str(exc)})
+
+        failed = len(failures)
+        return {
+            "ok": failed == 0,
+            "action": "ai-classify",
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "failures": failures,
+            "classifications": classifications,
+            "message": (
+                f"AI 分类完成：{updated} 篇已更新，"
+                f"{skipped} 篇分类未变化，{failed} 篇失败。"
+            ),
+        }
+
+    def repair_page_covers(self, page_ids):
+        page_ids = self.validate_page_ids(page_ids)
+        updated = 0
+        failures = []
+
+        for page_id in page_ids:
+            try:
+                page = self.get_page(page_id)
+                props = page.get("properties", {})
+                source_url = read_url(props.get(COVER_URL_PROP, {}))
+                cached_asset = self.cover_store.get_asset_for_page(page_id)
+
+                if cached_asset:
+                    try:
+                        self.cover_service.upload_cached_asset(
+                            cached_asset["id"],
+                            page_id=page_id,
+                            force_upload=True,
+                        )
+                        updated += 1
+                        continue
+                    except (CoverAssetError, ValueError):
+                        if not source_url:
+                            source_urls = cached_asset.get("source_urls") or []
+                            source_url = source_urls[-1] if source_urls else ""
+
+                if not source_url:
+                    source_url = read_cover_url(page)
+                if not source_url:
+                    raise NotionManagerError("没有可用于修复的封面来源。")
+                self.cover_service.cache_upload_and_attach(
+                    source_url,
+                    page_id,
+                    force_cache=True,
+                    force_upload=True,
+                )
+                updated += 1
+            except Exception as exc:
+                failures.append({"page_id": page_id, "error": str(exc)})
+
+        failed = len(failures)
+        return {
+            "ok": failed == 0,
+            "action": "repair-cover",
+            "updated": updated,
+            "skipped": 0,
+            "failed": failed,
+            "failures": failures,
+            "message": f"已修复 {updated} 篇笔记的封面，{failed} 篇失败。",
+        }
+
+    def clean_page_tags(self, page_ids):
+        page_ids = self.validate_page_ids(page_ids)
+        updated = 0
+        skipped = 0
+        failures = []
+
+        for page_id in page_ids:
+            try:
+                page = self.get_page(page_id)
+                props = page.get("properties", {})
+                original_wild = read_rich_text(props.get(TAGS_PROP, {}))
+                original_color = read_multi_select(props.get(COLOR_TAGS_PROP, {}))
+                clean_wild = normalize_tags(original_wild)
+                clean_color = normalize_tags(original_color)
+                clean_wild_text = ", ".join(clean_wild)
+
+                properties = {}
+                if clean_wild_text != original_wild:
+                    properties[TAGS_PROP] = rich_text_payload(clean_wild_text)
+                if clean_color != original_color:
+                    properties[COLOR_TAGS_PROP] = {
+                        "multi_select": [{"name": tag} for tag in clean_color]
+                    }
+                if not properties:
+                    skipped += 1
+                    continue
+
+                self.patch_page_properties(page_id, properties)
+                updated += 1
+            except Exception as exc:
+                failures.append({"page_id": page_id, "error": str(exc)})
+
+        failed = len(failures)
+        return {
+            "ok": failed == 0,
+            "action": "clean-tags",
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "failures": failures,
+            "message": (
+                f"标签清理完成：{updated} 篇已更新，"
+                f"{skipped} 篇无需修改，{failed} 篇失败。"
+            ),
+        }
+
+    def merge_duplicate_pages(self, page_ids):
+        page_ids = self.validate_page_ids(page_ids)
+        if len(page_ids) < 2:
+            raise NotionManagerError("合并重复记录至少需要选择两篇笔记。")
+
+        pages = []
+        failures = []
+        for page_id in page_ids:
+            try:
+                page = self.get_page(page_id)
+                note = self.page_to_note(page)
+                duplicate_key = canonical_duplicate_key(note)
+                if duplicate_key:
+                    pages.append((page, note, duplicate_key))
+            except Exception as exc:
+                failures.append({"page_id": page_id, "error": str(exc)})
+
+        groups = {}
+        for page, note, duplicate_key in pages:
+            groups.setdefault(duplicate_key, []).append((page, note))
+
+        duplicate_groups = [items for items in groups.values() if len(items) > 1]
+        groups_merged = 0
+        archived = 0
+        merged_details = []
+
+        for items in duplicate_groups:
+            try:
+                survivor_page, survivor_note = max(
+                    items,
+                    key=lambda pair: self._note_quality_score(pair[1]),
+                )
+                duplicate_items = [
+                    pair for pair in items
+                    if pair[0].get("id") != survivor_page.get("id")
+                ]
+                properties, cover = self._build_merged_page_update(
+                    survivor_page,
+                    [pair[0] for pair in duplicate_items],
+                )
+                self.patch_page(
+                    survivor_page["id"],
+                    properties=properties,
+                    cover=cover,
+                )
+
+                archived_ids = []
+                for duplicate_page, _ in duplicate_items:
+                    duplicate_id = duplicate_page.get("id")
+                    self.request(
+                        "PATCH",
+                        f"https://api.notion.com/v1/pages/{duplicate_id}",
+                        json={"archived": True},
+                    )
+                    archived_ids.append(duplicate_id)
+                    archived += 1
+
+                groups_merged += 1
+                merged_details.append(
+                    {
+                        "survivor_id": survivor_page.get("id"),
+                        "title": survivor_note.get("title", ""),
+                        "archived_ids": archived_ids,
+                    }
+                )
+            except Exception as exc:
+                failures.append(
+                    {
+                        "page_id": items[0][0].get("id", ""),
+                        "error": str(exc),
+                    }
+                )
+
+        failed = len(failures)
+        ignored = len(page_ids) - sum(len(items) for items in duplicate_groups)
+        return {
+            "ok": failed == 0,
+            "action": "merge-duplicates",
+            "updated": groups_merged,
+            "groups_merged": groups_merged,
+            "archived": archived,
+            "skipped": max(ignored, 0),
+            "failed": failed,
+            "failures": failures,
+            "merged": merged_details,
+            "message": (
+                f"已合并 {groups_merged} 组重复记录，"
+                f"{archived} 篇重复项已移入回收站，"
+                f"{max(ignored, 0)} 篇未发现重复，{failed} 项失败。"
+            ),
+        }
+
+    @staticmethod
+    def _note_quality_score(note):
+        return (
+            min(len(note.get("summary") or ""), 500)
+            + min(len(note.get("title") or ""), 100)
+            + (50 if note.get("cover") else 0)
+            + (30 if note.get("author") else 0)
+            + 10 * len(note.get("album_ids") or [])
+            + 5 * len(normalize_tags(note.get("tags", "")))
+        )
+
+    def _build_merged_page_update(self, survivor_page, duplicate_pages):
+        all_pages = [survivor_page] + duplicate_pages
+        props_list = [page.get("properties", {}) for page in all_pages]
+
+        def longest_text(property_name, reader):
+            values = [reader(props.get(property_name, {})) for props in props_list]
+            return max(values, key=len, default="")
+
+        title = longest_text(TITLE_PROP, read_title)
+        summary = longest_text(SUMMARY_PROP, read_rich_text)
+        author = longest_text(AUTHOR_PROP, read_rich_text)
+        source_url = next(
+            (
+                read_url(props.get(URL_PROP, {}))
+                for props in props_list
+                if read_url(props.get(URL_PROP, {}))
+            ),
+            "",
+        )
+        cover_source = next(
+            (
+                read_url(props.get(COVER_URL_PROP, {}))
+                for props in props_list
+                if read_url(props.get(COVER_URL_PROP, {}))
+            ),
+            "",
+        )
+        status = next(
+            (
+                read_status(props.get(STATUS_PROP, {}))
+                for props in props_list
+                if read_status(props.get(STATUS_PROP, {}))
+            ),
+            "",
+        )
+
+        wild_tags = normalize_tags(
+            [
+                tag
+                for props in props_list
+                for tag in normalize_tags(read_rich_text(props.get(TAGS_PROP, {})))
+            ]
+        )
+        color_tags = normalize_tags(
+            [
+                tag
+                for props in props_list
+                for tag in read_multi_select(props.get(COLOR_TAGS_PROP, {}))
+            ]
+        )
+        album_ids = list(
+            dict.fromkeys(
+                item.get("id")
+                for props in props_list
+                for item in props.get(ALBUM_PROP, {}).get("relation", [])
+                if item.get("id")
+            )
+        )
+
+        properties = {
+            TITLE_PROP: title_payload(title),
+            SUMMARY_PROP: rich_text_payload(summary),
+            AUTHOR_PROP: rich_text_payload(author),
+            URL_PROP: {"url": source_url or None},
+            COVER_URL_PROP: {"url": cover_source or None},
+            TAGS_PROP: rich_text_payload(", ".join(wild_tags)),
+            COLOR_TAGS_PROP: {
+                "multi_select": [{"name": tag} for tag in color_tags]
+            },
+            ALBUM_PROP: {
+                "relation": [{"id": album_id} for album_id in album_ids]
+            },
+        }
+        if status:
+            properties[STATUS_PROP] = {"select": {"name": status}}
+
+        survivor_cover = read_cover_url(survivor_page)
+        replacement_cover = None
+        if not survivor_cover:
+            replacement_cover = next(
+                (
+                    page.get("cover")
+                    for page in duplicate_pages
+                    if (page.get("cover") or {}).get("type") == "external"
+                    and read_cover_url(page)
+                ),
+                None,
+            )
+        return properties, replacement_cover
+
+    def run_batch_action(self, action, payload):
+        page_ids = payload.get("page_ids")
+        if action == "album":
+            return self.add_pages_to_album(
+                page_ids,
+                payload.get("album_name"),
+                mode=payload.get("mode", "append"),
+            )
+        if action == "status":
+            return self.update_pages_status(page_ids, payload.get("status"))
+        if action == "ai-classify":
+            return self.rerun_ai_classification(page_ids)
+        if action == "repair-cover":
+            return self.repair_page_covers(page_ids)
+        if action == "clean-tags":
+            return self.clean_page_tags(page_ids)
+        if action == "merge-duplicates":
+            return self.merge_duplicate_pages(page_ids)
+        raise NotionManagerError(f"不支持的批量操作：{action or '空'}")

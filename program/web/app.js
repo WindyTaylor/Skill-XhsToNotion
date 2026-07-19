@@ -7,6 +7,7 @@ const state = {
   nextCursor: "",
   scanned: 0,
   contextNoteId: "",
+  batchBusy: false,
 };
 
 const BACKGROUND_STORAGE_KEY = "xhs-notion-console-background";
@@ -19,7 +20,16 @@ const el = {
   backgroundButton: document.querySelector("#backgroundButton"),
   clearBackgroundButton: document.querySelector("#clearBackgroundButton"),
   searchButton: document.querySelector("#searchButton"),
-  addAlbumButton: document.querySelector("#addAlbumButton"),
+  bulkPanel: document.querySelector("#bulkPanel"),
+  selectAllButton: document.querySelector("#selectAllButton"),
+  clearSelectionButton: document.querySelector("#clearSelectionButton"),
+  aiClassifyButton: document.querySelector("#aiClassifyButton"),
+  batchStatusSelect: document.querySelector("#batchStatusSelect"),
+  batchStatusButton: document.querySelector("#batchStatusButton"),
+  repairCoverButton: document.querySelector("#repairCoverButton"),
+  cleanTagsButton: document.querySelector("#cleanTagsButton"),
+  mergeDuplicatesButton: document.querySelector("#mergeDuplicatesButton"),
+  albumActionButtons: Array.from(document.querySelectorAll(".album-action-button")),
   selectedCount: document.querySelector("#selectedCount"),
   message: document.querySelector("#message"),
   notesGrid: document.querySelector("#notesGrid"),
@@ -142,7 +152,7 @@ async function requestJson(url, options = {}) {
     ...options,
   });
   const data = await response.json();
-  if (!response.ok || data.ok === false) {
+  if (!response.ok) {
     throw new Error(data.error || data.message || `请求失败：${response.status}`);
   }
   return data;
@@ -385,44 +395,165 @@ function splitTags(tags) {
 }
 
 function updateSelection() {
-  el.selectedCount.textContent = state.selectedIds.size;
-  el.addAlbumButton.disabled =
-    state.selectedIds.size === 0 || !el.targetAlbumSelect.value;
+  const selectedCount = state.selectedIds.size;
+  const hasSelection = selectedCount > 0;
+  const hasAlbum = Boolean(filterValue(el.targetAlbumSelect.value));
+  const hasStatus = Boolean(filterValue(el.batchStatusSelect.value));
+
+  el.selectedCount.textContent = selectedCount;
+  el.selectAllButton.disabled = state.batchBusy || state.notes.length === 0;
+  el.clearSelectionButton.disabled = state.batchBusy || !hasSelection;
+  el.targetAlbumSelect.disabled = state.batchBusy;
+  el.batchStatusSelect.disabled = state.batchBusy;
+  el.aiClassifyButton.disabled = state.batchBusy || !hasSelection;
+  el.batchStatusButton.disabled = state.batchBusy || !hasSelection || !hasStatus;
+  el.repairCoverButton.disabled = state.batchBusy || !hasSelection;
+  el.cleanTagsButton.disabled = state.batchBusy || !hasSelection;
+  el.mergeDuplicatesButton.disabled = state.batchBusy || selectedCount < 2;
+  el.albumActionButtons.forEach((button) => {
+    button.disabled = state.batchBusy || !hasSelection || !hasAlbum;
+  });
 }
 
 function handleTargetAlbumChange() {
   updateSelection();
-  if (!filterValue(el.targetAlbumSelect.value) && filterValue(el.albumFilterSelect.value)) {
-    el.albumFilterSelect.value = "";
-    loadNotes();
-  }
 }
 
-async function addSelectedToAlbum() {
-  const albumName = el.targetAlbumSelect.value;
-  if (!albumName || state.selectedIds.size === 0) return;
+function selectAllVisible() {
+  state.notes.forEach((note) => state.selectedIds.add(note.id));
+  renderNotes();
+  updateSelection();
+}
 
-  el.addAlbumButton.disabled = true;
-  setMessage("正在追加专辑...");
+function clearSelection() {
+  state.selectedIds.clear();
+  renderNotes();
+  updateSelection();
+}
+
+function setBatchBusy(button, isBusy, busyLabel = "处理中...") {
+  state.batchBusy = isBusy;
+  el.bulkPanel.setAttribute("aria-busy", String(isBusy));
+  el.bulkPanel.classList.toggle("is-busy", isBusy);
+  if (button) {
+    if (isBusy) {
+      button.dataset.idleLabel = button.textContent;
+      button.textContent = busyLabel;
+      button.classList.add("is-loading");
+    } else {
+      button.textContent = button.dataset.idleLabel || button.textContent;
+      button.classList.remove("is-loading");
+    }
+  }
+  updateSelection();
+}
+
+async function runBatchAction({
+  action,
+  button,
+  payload = {},
+  busyLabel = "处理中...",
+  confirmText = "",
+}) {
+  const pageIds = Array.from(state.selectedIds);
+  if (!pageIds.length || state.batchBusy) return;
+  if (confirmText && !window.confirm(confirmText)) return;
+
+  setBatchBusy(button, true, busyLabel);
+  setMessage(`${busyLabel} 请保持页面打开。`);
 
   try {
-    const data = await requestJson("/api/notes/add-to-album", {
+    const data = await requestJson("/api/notes/batch", {
       method: "POST",
       body: JSON.stringify({
-        page_ids: Array.from(state.selectedIds),
-        album_name: albumName,
-        mode: "append",
+        action,
+        page_ids: pageIds,
+        ...payload,
       }),
     });
-    const resultMessage = data.message || "操作完成";
+    const resultMessage = data.message || "批量操作已完成。";
     const resultType = data.failed ? "error" : "success";
     await loadNotes();
     setMessage(resultMessage, resultType);
   } catch (error) {
     setMessage(error.message, "error");
   } finally {
-    updateSelection();
+    setBatchBusy(button, false);
   }
+}
+
+function runAlbumAction(event) {
+  const button = event.currentTarget;
+  const mode = button.dataset.albumMode;
+  const albumName = filterValue(el.targetAlbumSelect.value);
+  if (!albumName) return;
+
+  const labels = {
+    append: "追加专辑",
+    move: "移动专辑",
+    remove: "移除专辑",
+  };
+  let confirmText = "";
+  if (mode === "move") {
+    confirmText = `移动后会用目标专辑替换所选 ${state.selectedIds.size} 篇笔记的原有专辑，确定继续吗？`;
+  } else if (mode === "remove") {
+    confirmText = `确定从所选 ${state.selectedIds.size} 篇笔记中移除该专辑吗？`;
+  }
+
+  runBatchAction({
+    action: "album",
+    button,
+    payload: { album_name: albumName, mode },
+    busyLabel: `${labels[mode]}中...`,
+    confirmText,
+  });
+}
+
+function runAiClassification() {
+  runBatchAction({
+    action: "ai-classify",
+    button: el.aiClassifyButton,
+    busyLabel: "AI 分类中...",
+    confirmText: `AI 会重新分析并替换所选 ${state.selectedIds.size} 篇笔记的当前专辑，确定继续吗？`,
+  });
+}
+
+function runStatusUpdate() {
+  const status = filterValue(el.batchStatusSelect.value);
+  if (!status) return;
+  runBatchAction({
+    action: "status",
+    button: el.batchStatusButton,
+    payload: { status },
+    busyLabel: "修改状态中...",
+  });
+}
+
+function runCoverRepair() {
+  runBatchAction({
+    action: "repair-cover",
+    button: el.repairCoverButton,
+    busyLabel: "修复封面中...",
+  });
+}
+
+function runTagCleanup() {
+  runBatchAction({
+    action: "clean-tags",
+    button: el.cleanTagsButton,
+    busyLabel: "清理标签中...",
+  });
+}
+
+function runDuplicateMerge() {
+  runBatchAction({
+    action: "merge-duplicates",
+    button: el.mergeDuplicatesButton,
+    busyLabel: "合并重复项中...",
+    confirmText:
+      `将检查所选 ${state.selectedIds.size} 篇笔记。重复项的标签和专辑会先合并，` +
+      "随后移入 Notion 回收站；该操作不可在管理台内撤销。确定继续吗？",
+  });
 }
 
 async function deleteContextNote() {
@@ -479,10 +610,20 @@ function bindEvents() {
   ensureContextMenu();
   el.searchButton.addEventListener("click", loadNotes);
   el.refreshButton.addEventListener("click", loadNotes);
-  el.addAlbumButton.addEventListener("click", addSelectedToAlbum);
+  el.selectAllButton.addEventListener("click", selectAllVisible);
+  el.clearSelectionButton.addEventListener("click", clearSelection);
+  el.aiClassifyButton.addEventListener("click", runAiClassification);
+  el.batchStatusButton.addEventListener("click", runStatusUpdate);
+  el.repairCoverButton.addEventListener("click", runCoverRepair);
+  el.cleanTagsButton.addEventListener("click", runTagCleanup);
+  el.mergeDuplicatesButton.addEventListener("click", runDuplicateMerge);
+  el.albumActionButtons.forEach((button) => {
+    button.addEventListener("click", runAlbumAction);
+  });
   el.statusSelect.addEventListener("change", loadNotes);
   el.albumFilterSelect.addEventListener("change", loadNotes);
   el.targetAlbumSelect.addEventListener("change", handleTargetAlbumChange);
+  el.batchStatusSelect.addEventListener("change", updateSelection);
   el.backgroundButton.addEventListener("click", () => el.backgroundInput.click());
   el.clearBackgroundButton.addEventListener("click", clearBackground);
   el.backgroundInput.addEventListener("change", () => {

@@ -64,6 +64,15 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = parse_query(self.path)
+        if path == "/api/notes/batch":
+            body = self.read_json_body()
+            self.handle_api(
+                lambda: self.manager.run_batch_action(
+                    body.get("action", ""),
+                    body,
+                )
+            )
+            return
         if path == "/api/notes/add-to-album":
             self.handle_api(lambda: self.manager.add_pages_to_album(**self.read_json_body()))
             return
@@ -87,8 +96,10 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
             self.write_json(callback())
         except NotionConfigError as exc:
             self.write_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-        except (NotionAPIError, NotionManagerError) as exc:
+        except NotionAPIError as exc:
             self.write_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        except NotionManagerError as exc:
+            self.write_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self.write_json({"ok": False, "error": f"服务异常: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 

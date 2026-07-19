@@ -48,11 +48,12 @@
           <select id="statusSelect">
             <option value="">全部</option>
             <option value="待阅读">待阅读</option>
-            <option value="已阅读">已阅读</option>
+            <option value="待路由">待路由</option>
             <option value="已整理">已整理</option>
+            <option value="已沉淀">已沉淀</option>
             <option value="已实践">已实践</option>
-            <option value="已废弃">已废弃</option>
             <option value="长期参考">长期参考</option>
+            <option value="已废弃">已废弃</option>
           </select>
         </span>
         <span class="chip">
@@ -63,13 +64,104 @@
         </span>
       </section>
 
-      <section class="bulkbar" aria-label="批量操作">
-        <div class="selection-count">已选 <strong id="selectedCount">0</strong> 篇</div>
-        <label class="target-album">
-          <span class="sr-only">目标专辑</span>
-          <select id="targetAlbumSelect"></select>
-        </label>
-        <button id="addAlbumButton" class="primary-button" type="button" disabled>追加到专辑</button>
+      <section id="bulkPanel" class="bulk-panel" aria-label="批量整理" aria-busy="false">
+        <header class="bulk-panel-header">
+          <div>
+            <div class="bulk-eyebrow">BATCH WORKSPACE</div>
+            <h2>批量整理</h2>
+            <p>只处理已选中的笔记，适合完成 Notion 原生界面不方便批量执行的操作。</p>
+          </div>
+          <div class="bulk-selection-tools">
+            <span class="selection-count">已选 <strong id="selectedCount">0</strong> 篇</span>
+            <button id="selectAllButton" class="text-button" type="button">全选当前结果</button>
+            <button id="clearSelectionButton" class="text-button" type="button" disabled>清空</button>
+          </div>
+        </header>
+
+        <div class="bulk-action-grid">
+          <article class="bulk-action-card is-ai">
+            <div class="bulk-card-heading">
+              <span class="bulk-card-icon">✦</span>
+              <div>
+                <h3>AI 重新分类</h3>
+                <p>重新分析内容，将专辑替换为首位候选。</p>
+              </div>
+            </div>
+            <button id="aiClassifyButton" class="action-button" type="button" disabled>运行分类</button>
+          </article>
+
+          <article class="bulk-action-card">
+            <div class="bulk-card-heading">
+              <span class="bulk-card-icon">◫</span>
+              <div>
+                <h3>专辑管理</h3>
+                <p>追加、移动，或从指定专辑中移除。</p>
+              </div>
+            </div>
+            <select id="targetAlbumSelect" class="action-select" aria-label="目标专辑"></select>
+            <div class="segmented-actions">
+              <button class="album-action-button" data-album-mode="append" type="button" disabled>追加</button>
+              <button class="album-action-button" data-album-mode="move" type="button" disabled>移动</button>
+              <button class="album-action-button" data-album-mode="remove" type="button" disabled>移除</button>
+            </div>
+          </article>
+
+          <article class="bulk-action-card">
+            <div class="bulk-card-heading">
+              <span class="bulk-card-icon">●</span>
+              <div>
+                <h3>修改状态</h3>
+                <p>将所选笔记统一设置为一个工作状态。</p>
+              </div>
+            </div>
+            <div class="inline-action">
+              <select id="batchStatusSelect" class="action-select" aria-label="目标状态">
+                <option value="">选择状态</option>
+                <option value="待阅读">待阅读</option>
+                <option value="待路由">待路由</option>
+                <option value="已整理">已整理</option>
+                <option value="已沉淀">已沉淀</option>
+                <option value="已实践">已实践</option>
+                <option value="长期参考">长期参考</option>
+                <option value="已废弃">已废弃</option>
+              </select>
+              <button id="batchStatusButton" class="action-button is-compact" type="button" disabled>应用</button>
+            </div>
+          </article>
+
+          <article class="bulk-action-card">
+            <div class="bulk-card-heading">
+              <span class="bulk-card-icon">▧</span>
+              <div>
+                <h3>补全封面</h3>
+                <p>重新缓存并上传封面，修复失效预览。</p>
+              </div>
+            </div>
+            <button id="repairCoverButton" class="action-button" type="button" disabled>修复封面</button>
+          </article>
+
+          <article class="bulk-action-card">
+            <div class="bulk-card-heading">
+              <span class="bulk-card-icon">#</span>
+              <div>
+                <h3>清理无效标签</h3>
+                <p>移除空值、占位词和重复标签。</p>
+              </div>
+            </div>
+            <button id="cleanTagsButton" class="action-button" type="button" disabled>清理标签</button>
+          </article>
+
+          <article class="bulk-action-card is-danger">
+            <div class="bulk-card-heading">
+              <span class="bulk-card-icon">⌘</span>
+              <div>
+                <h3>合并重复记录</h3>
+                <p>汇总有效字段，重复项移入回收站。</p>
+              </div>
+            </div>
+            <button id="mergeDuplicatesButton" class="action-button is-danger" type="button" disabled>查找并合并</button>
+          </article>
+        </div>
       </section>
 
       <div id="message" class="message" role="status" aria-live="polite"></div>
@@ -81,6 +173,6 @@
         <div id="loadMoreSentinel" class="load-more-sentinel" aria-hidden="true"></div>
       </section>
     </main>
-    <script src="/app.js?v=20260715-infinite-scroll"></script>
+    <script src="/app.js?v=20260719-batch-workspace"></script>
   </body>
 </html>
