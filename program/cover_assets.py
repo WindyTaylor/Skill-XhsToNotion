@@ -177,6 +177,30 @@ class CoverAssetStore:
             return ""
         return self.local_url(asset)
 
+    def get_assets_for_page(self, page_id: str) -> list[Dict[str, Any]]:
+        clean_id = clean_page_id(page_id)
+        if not clean_id:
+            return []
+        assets = []
+        for asset in self.load_index().get("assets", {}).values():
+            if clean_id not in (asset.get("page_ids") or []):
+                continue
+            try:
+                if not self.file_path_for_asset(asset).exists():
+                    continue
+            except (CoverAssetError, ValueError):
+                continue
+            item = dict(asset)
+            item["local_url"] = self.local_url(item)
+            assets.append(item)
+        return sorted(
+            assets,
+            key=lambda item: (
+                item.get("created_at") or "",
+                item.get("filename") or "",
+            ),
+        )
+
     def cache_from_url(
         self,
         source_url: str,
@@ -270,7 +294,7 @@ class CoverAssetStore:
                 urls.append(source_url)
         clean_id = clean_page_id(page_id)
         if clean_id:
-            index.setdefault("page_assets", {})[clean_id] = asset_id
+            index.setdefault("page_assets", {}).setdefault(clean_id, asset_id)
             page_ids = asset.setdefault("page_ids", [])
             if clean_id not in page_ids:
                 page_ids.append(clean_id)

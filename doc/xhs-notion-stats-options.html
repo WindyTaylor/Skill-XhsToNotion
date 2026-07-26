@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>小红书收藏中心状态统计方案</title>
+    <style>
+      :root {
+        --bg: #f7f6f2;
+        --page: #ffffff;
+        --ink: #2f2e2a;
+        --muted: #716d65;
+        --faint: #a39d94;
+        --line: #e2ddd3;
+        --line-strong: #cfc7bb;
+        --panel: #fbfaf7;
+        --red: #b84d61;
+        --red-bg: #faeaee;
+        --blue: #386aa6;
+        --blue-bg: #eaf1fa;
+        --green: #29785f;
+        --green-bg: #e6f4ee;
+        --orange: #9b5b22;
+        --orange-bg: #faeedf;
+        --purple: #6651a2;
+        --purple-bg: #efedfa;
+        --yellow: #8a6a14;
+        --yellow-bg: #f8f1ce;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(90deg, rgba(0, 0, 0, 0.035) 0, transparent 1px) 0 0 / 64px 64px,
+          linear-gradient(rgba(0, 0, 0, 0.025) 0, transparent 1px) 0 0 / 64px 64px,
+          var(--bg);
+        color: var(--ink);
+        font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      }
+
+      .stage {
+        width: 1180px;
+        margin: 0 auto;
+        padding: 34px 0 64px;
+      }
+
+      .shot {
+        width: 1080px;
+        margin: 0 auto 34px;
+        padding: 44px 58px 50px;
+        background: var(--page);
+        border: 1px solid #ebe7df;
+        box-shadow: 0 24px 64px rgba(46, 39, 28, 0.13);
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      h1 {
+        margin: 10px 0 8px;
+        font-size: 30px;
+        line-height: 1.2;
+        letter-spacing: 0;
+      }
+
+      .intro {
+        width: 780px;
+        margin: 0 0 26px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .section-title strong {
+        font-size: 20px;
+      }
+
+      .section-title span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .view-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .tab {
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 6px;
+      }
+
+      .tab.active {
+        background: #f0eee8;
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .linked-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+
+      .mini-table {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .mini-table header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .mini-table header strong {
+        font-size: 14px;
+      }
+
+      .mini-table header span {
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+      }
+
+      .mini-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        padding: 8px 12px;
+        border-bottom: 1px solid #f0ece5;
+        font-size: 12px;
+      }
+
+      .mini-row:last-of-type {
+        border-bottom: 0;
+      }
+
+      .mini-row .title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mini-row .state {
+        color: var(--muted);
+      }
+
+      .count-footer {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 12px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+        background: #fbfaf7;
+      }
+
+      .count-footer strong {
+        color: var(--ink);
+      }
+
+      .pill-red { color: var(--red); background: var(--red-bg); }
+      .pill-blue { color: var(--blue); background: var(--blue-bg); }
+      .pill-green { color: var(--green); background: var(--green-bg); }
+      .pill-orange { color: var(--orange); background: var(--orange-bg); }
+      .pill-purple { color: var(--purple); background: var(--purple-bg); }
+
+      .dashboard {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+
+      .number-card {
+        min-height: 142px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.68), transparent 46%),
+          var(--panel);
+      }
+
+      .number-card .label {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .number-card .value {
+        margin-top: 13px;
+        font-size: 42px;
+        line-height: 1;
+        font-weight: 780;
+      }
+
+      .number-card .delta {
+        margin-top: 12px;
+        color: var(--faint);
+        font-size: 12px;
+      }
+
+      .bar-card {
+        grid-column: span 2;
+        min-height: 180px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .bar-card strong {
+        font-size: 15px;
+      }
+
+      .bars {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 84px 1fr 32px;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .track {
+        height: 9px;
+        border-radius: 999px;
+        background: #f0eee8;
+        overflow: hidden;
+      }
+
+      .fill {
+        height: 100%;
+        border-radius: 999px;
+        background: var(--purple);
+      }
+
+      .fill.red { background: var(--red); }
+      .fill.blue { background: var(--blue); }
+      .fill.green { background: var(--green); }
+      .fill.orange { background: var(--orange); }
+
+      .rollup-layout {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 14px;
+      }
+
+      .domain-board {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fff;
+      }
+
+      .domain-board header {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .domain-board header strong {
+        font-size: 15px;
+      }
+
+      .domain-board header span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .album-card-list {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .album-card {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        min-height: 72px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #fff;
+      }
+
+      .album-card strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .tiny-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+      }
+
+      .tiny {
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: #f0eee8;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .rollups {
+        display: grid;
+        grid-template-columns: repeat(3, auto);
+        gap: 8px;
+        align-content: center;
+        text-align: right;
+      }
+
+      .rollups span {
+        display: block;
+        color: var(--faint);
+        font-size: 10px;
+      }
+
+      .rollups strong {
+        display: block;
+        margin-top: 2px;
+        font-size: 16px;
+      }
+
+      .formula-note {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--purple-bg);
+      }
+
+      .formula-note strong {
+        display: block;
+        color: var(--purple);
+        font-size: 15px;
+      }
+
+      .formula-note p {
+        margin: 8px 0 0;
+        color: #5d547c;
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .formula-note code {
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.78);
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <section class="shot" id="option-linked">
+        <div class="eyebrow">方案 1 / Linked database + 筛选 + 底部 Count</div>
+        <h1>最稳的 Notion 原生统计</h1>
+        <p class="intro">
+          每张小表都是内容总库的一个链接视图，分别加状态或时间筛选。底部 Count 会随数据库变化自动更新，适合追求稳定和可维护。
+        </p>
+        <div class="section-title">
+          <strong>状态统计</strong>
+          <span>自动更新：是 / 视觉自由度：中 / 实现难度：低</span>
+        </div>
+        <div class="linked-grid">
+          <article class="mini-table">
+            <header><strong>待阅读</strong><span class="pill-orange">状态筛选</span></header>
+            <div class="mini-row"><span class="title">Codex 自动化整理工作流</span><span class="state">待阅读</span></div>
+            <div class="mini-row"><span class="title">日系人像动作参考</span><span class="state">待阅读</span></div>
+            <div class="mini-row"><span class="title">空气炸锅菜单</span><span class="state">待阅读</span></div>
+            <div class="count-footer"><span>Count all</span><strong>18</strong></div>
+          </article>
+          <article class="mini-table">
+            <header><strong>待路由</strong><span class="pill-red">状态筛选</span></header>
+            <div class="mini-row"><span class="title">重庆轻轨机位收集</span><span class="state">待路由</span></div>
+            <div class="mini-row"><span class="title">AI 生成摄影灵感</span><span class="state">待路由</span></div>
+            <div class="mini-row"><span class="title">未分类素材清理</span><span class="state">待路由</span></div>
+            <div class="count-footer"><span>Count all</span><strong>6</strong></div>
+          </article>
+          <article class="mini-table">
+            <header><strong>近 7 天新增</strong><span class="pill-blue">时间筛选</span></header>
+            <div class="mini-row"><span class="title">Notion 数据库视图优化</span><span class="state">今天</span></div>
+            <div class="mini-row"><span class="title">嵌入式项目灵感</span><span class="state">昨天</span></div>
+            <div class="mini-row"><span class="title">拍照参考制服双子</span><span class="state">周内</span></div>
+            <div class="count-footer"><span>Count all</span><strong>27</strong></div>
+          </article>
+          <article class="mini-table">
+            <header><strong>已实践</strong><span class="pill-green">状态筛选</span></header>
+            <div class="mini-row"><span class="title">管理台批量追加专辑</span><span class="state">已实践</span></div>
+            <div class="mini-row"><span class="title">封面缓存上传</span><span class="state">已实践</span></div>
+            <div class="mini-row"><span class="title">AI 专辑说明维护</span><span class="state">已实践</span></div>
+            <div class="count-footer"><span>Count all</span><strong>9</strong></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="shot" id="option-chart">
+        <div class="eyebrow">方案 2 / Chart 或 Number 视图</div>
+        <h1>最像仪表盘的实时数字卡</h1>
+        <p class="intro">
+          用 Notion Chart / Number 视图直接显示计数，视觉最接近独立 App 的统计卡。适合放在收藏中心首屏，但需要你的 Notion 工作区支持 Chart 视图。
+        </p>
+        <div class="section-title">
+          <strong>状态统计</strong>
+          <span>自动更新：是 / 视觉自由度：高 / 实现难度：中</span>
+        </div>
+        <div class="dashboard">
+          <article class="number-card" style="background: var(--orange-bg)">
+            <div class="label">待阅读</div>
+            <div class="value">18</div>
+            <div class="delta">状态 = 待阅读</div>
+          </article>
+          <article class="number-card" style="background: var(--red-bg)">
+            <div class="label">待路由</div>
+            <div class="value">6</div>
+            <div class="delta">需要人工确认专辑</div>
+          </article>
+          <article class="number-card" style="background: var(--blue-bg)">
+            <div class="label">近 7 天新增</div>
+            <div class="value">27</div>
+            <div class="delta">创建时间 is within past week</div>
+          </article>
+          <article class="number-card" style="background: var(--green-bg)">
+            <div class="label">已实践</div>
+            <div class="value">9</div>
+            <div class="delta">可进入复盘视图</div>
+          </article>
+          <article class="bar-card">
+            <strong>按状态分布</strong>
+            <div class="bars">
+              <div class="bar-row"><span>待阅读</span><div class="track"><div class="fill orange" style="width: 66%"></div></div><span>18</span></div>
+              <div class="bar-row"><span>已整理</span><div class="track"><div class="fill green" style="width: 48%"></div></div><span>13</span></div>
+              <div class="bar-row"><span>待路由</span><div class="track"><div class="fill red" style="width: 22%"></div></div><span>6</span></div>
+              <div class="bar-row"><span>已实践</span><div class="track"><div class="fill blue" style="width: 33%"></div></div><span>9</span></div>
+            </div>
+          </article>
+          <article class="bar-card">
+            <strong>近 7 天收藏走势</strong>
+            <div class="bars">
+              <div class="bar-row"><span>周一</span><div class="track"><div class="fill purple" style="width: 34%"></div></div><span>3</span></div>
+              <div class="bar-row"><span>周二</span><div class="track"><div class="fill purple" style="width: 58%"></div></div><span>5</span></div>
+              <div class="bar-row"><span>周三</span><div class="track"><div class="fill purple" style="width: 86%"></div></div><span>8</span></div>
+              <div class="bar-row"><span>周四</span><div class="track"><div class="fill purple" style="width: 42%"></div></div><span>4</span></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="shot" id="option-rollup">
+        <div class="eyebrow">方案 3 / 专辑库 Rollup + Formula 展示</div>
+        <h1>最适合专辑地图的自动统计</h1>
+        <p class="intro">
+          每个专辑卡片直接读取专辑标签库中的 Rollup：笔记总量、待处理数量、最后更新。它不适合做全局四个数字，但非常适合六大主题专辑区。
+        </p>
+        <div class="section-title">
+          <strong>六大主题专辑</strong>
+          <span>自动更新：是 / 视觉自由度：中高 / 实现难度：中</span>
+        </div>
+        <div class="rollup-layout">
+          <div class="domain-board">
+            <header><strong>📸 视觉叙事与影像实验室</strong><span>Gallery filtered by 主领域</span></header>
+            <div class="album-card-list">
+              <article class="album-card">
+                <div>
+                  <strong>积累拍照灵感</strong>
+                  <div class="tiny-tags"><span class="tiny">摄影</span><span class="tiny">灵感</span><span class="tiny">构图</span></div>
+                </div>
+                <div class="rollups">
+                  <div><span>总量</span><strong>58</strong></div>
+                  <div><span>待处理</span><strong>8</strong></div>
+                  <div><span>更新</span><strong>今天</strong></div>
+                </div>
+              </article>
+              <article class="album-card">
+                <div>
+                  <strong>学习调色</strong>
+                  <div class="tiny-tags"><span class="tiny">调色</span><span class="tiny">后期</span><span class="tiny">LUT</span></div>
+                </div>
+                <div class="rollups">
+                  <div><span>总量</span><strong>24</strong></div>
+                  <div><span>待处理</span><strong>1</strong></div>
+                  <div><span>更新</span><strong>昨天</strong></div>
+                </div>
+              </article>
+              <article class="album-card">
+                <div>
+                  <strong>学习布光</strong>
+                  <div class="tiny-tags"><span class="tiny">布光</span><span class="tiny">现场</span><span class="tiny">灯位</span></div>
+                </div>
+                <div class="rollups">
+                  <div><span>总量</span><strong>17</strong></div>
+                  <div><span>待处理</span><strong>3</strong></div>
+                  <div><span>更新</span><strong>周内</strong></div>
+                </div>
+              </article>
+            </div>
+          </div>
+          <div class="domain-board">
+            <header><strong>🛠️ 硬核技术与职业效能</strong><span>Gallery filtered by 主领域</span></header>
+            <div class="album-card-list">
+              <article class="album-card">
+                <div>
+                  <strong>💻学习AI编程</strong>
+                  <div class="tiny-tags"><span class="tiny">编程</span><span class="tiny">LLM</span><span class="tiny">工具</span></div>
+                </div>
+                <div class="rollups">
+                  <div><span>总量</span><strong>42</strong></div>
+                  <div><span>待处理</span><strong>5</strong></div>
+                  <div><span>更新</span><strong>今天</strong></div>
+                </div>
+              </article>
+              <article class="album-card">
+                <div>
+                  <strong>💻学习嵌入式知识</strong>
+                  <div class="tiny-tags"><span class="tiny">嵌入式</span><span class="tiny">硬件</span></div>
+                </div>
+                <div class="rollups">
+                  <div><span>总量</span><strong>19</strong></div>
+                  <div><span>待处理</span><strong>2</strong></div>
+                  <div><span>更新</span><strong>周内</strong></div>
+                </div>
+              </article>
+              <article class="album-card">
+                <div>
+                  <strong>💻学习notion</strong>
+                  <div class="tiny-tags"><span class="tiny">Notion</span><span class="tiny">流程</span></div>
+                </div>
+                <div class="rollups">
+                  <div><span>总量</span><strong>36</strong></div>
+                  <div><span>待处理</span><strong>4</strong></div>
+                  <div><span>更新</span><strong>昨天</strong></div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+        <div class="formula-note">
+          <strong>这里用的是你现有专辑库字段</strong>
+          <p>
+            可直接显示 <code>📊笔记总量</code>、<code>🔴 待处理</code>、<code>⏱️最后更新</code>，再用
+            <code>展示_总量</code>、<code>展示_代办</code>、<code>展示_时间</code> 做更短的卡片文案。
+          </p>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

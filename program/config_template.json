@@ -2,6 +2,8 @@
   "NOTION_API_KEY": "ntn_your_api_key_here",
   "NOTION_DATABASE_ID": "your_database_id_here",
   "NOTION_DATA_SOURCE_ID": "",
+  "NOTION_MATERIAL_DATABASE_ID": "",
+  "NOTION_MATERIAL_DATA_SOURCE_ID": "",
   "NOTION_VERSION": "2025-09-03",
   "NOTION_FILE_UPLOAD_VERSION": "2026-03-11",
   "NOTION_TIMEOUT": 15,
@@ -9,6 +11,8 @@
   "COVER_CACHE_ENABLED": true,
   "COVER_UPLOAD_TO_NOTION": true,
   "COVER_CACHE_DIR": "",
+  "XHS_FETCH_MIN_INTERVAL_SECONDS": 3,
+  "XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS": 1,
   "DEEPSEEK_API_KEY": "sk_your_deepseek_api_key_here_optional",
   "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
   "DEEPSEEK_MODEL": "deepseek-chat"

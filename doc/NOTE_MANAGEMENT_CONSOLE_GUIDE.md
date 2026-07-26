@@ -15,6 +15,7 @@ Updated: 2026-07-10
 - 能把搜索结果中选中的若干篇笔记批量复制或归档到新的专辑。
 - 能持续加载更多搜索结果，并将不需要的笔记移入 Notion 回收站。
 - 能直接维护供 DeepSeek 专辑推理参考的 `album_descriptions.json`。
+- 能针对摄影类笔记进入“拆图”流程，手动选择 1 张或多张图片并沉淀到独立素材库。
 - 能在 Notion 中通过一个页面入口使用这个管理台。
 
 ## 目标形态
@@ -104,6 +105,16 @@ Notion 原生页面不能实现真正可编程的搜索框、勾选和批量复�
 - `program/SKILL.md`
 - 本文件
 
+## 摄影拆图素材库
+
+管理台提供笔记卡片级“拆图”入口。该功能不做 AI 分析，只负责：
+
+- 提取或读取当前笔记的全部图片。
+- 让用户手动勾选要沉淀的图片。
+- 将用户填写的构图标签、动作标签、场景、景别、机位角度、主体类型、光线标签、色彩标签、情绪氛围、学习点、复刻提示、状态、评分和是否适合复刻写入独立 Notion 素材库。
+
+素材库 ID 由 `NOTION_MATERIAL_DATABASE_ID` 配置，可选 `NOTION_MATERIAL_DATA_SOURCE_ID`。建议素材库字段为：`标题`、`图片`、`图片链接`、`来源笔记`、`原文链接`、`来源标题`、`作者`、`构图标签`、`动作标签`、`光线标签`、`色彩标签`、`场景`、`景别`、`机位角度`、`主体类型`、`情绪氛围`、`学习点`、`复刻提示`、`状态`、`来源图片序号`、`适合复刻`、`评分`。后端应只写入实际存在且类型匹配的字段。Notion 中建议建立 Gallery 视图，并按 `色彩标签`、`动作标签`、`构图标签` 和 `适合复刻` 建常用筛选视图。
+
 ## 第一版范围
 
 第一版目标是做出可用的本地 Web 管理台，允许用户在浏览器中操作，再把页面地址嵌入 Notion。
@@ -154,7 +165,7 @@ http://127.0.0.1:8765
 - 全文向量搜索。
 - AI 自动聚类。
 - 永久删除 Notion 页面（管理台仅支持移入 Notion 回收站）。
-- 复杂拖拽式专辑管理。
+- 复杂拖拽式专辑层级管理（当前仅支持专辑列表顺序拖拽排序）。
 
 这些可作为后续阶段。
 
@@ -201,6 +212,16 @@ program/
 - `action=rename`：按专辑名或页面 ID 定位专辑，使用 `new_name` 重命名。
 - 创建成功后同步 `album_map.json` 与 `album_domains.json`。
 - 重命名不改变专辑页面 ID，因此已有笔记 Relation 保持不变；同时迁移 `album_map.json`、`album_domains.json` 和 `album_descriptions.json` 中的名称键。
+
+### `POST /api/albums/order`
+
+保存管理台中的人工专辑顺序。请求体传入 `album_ids` 数组，后端会过滤不存在的 ID，并把遗漏的现有专辑自动追加到末尾，最终写入 `album_order.json`。`GET /api/albums` 和 `GET /api/album-descriptions` 都按该顺序返回，因此顶部专辑过滤、批量目标专辑和左侧 AI 专辑说明列表保持一致。
+
+```json
+{
+  "album_ids": ["notion-page-id-1", "notion-page-id-2"]
+}
+```
 
 ### `GET /api/album-descriptions`
 
@@ -421,7 +442,8 @@ if target_album_id not in ids:
 基本交互：
 
 - 输入搜索词后按 Enter 搜索。
-- 综合搜索、标题、作者和标签输入框可用 `+` 分隔多个必须同时满足的关键词，例如 `日系 + 制服`。
+- 上传背景应在前端自动缩放压缩并立即应用；成功持久化时保存到当前浏览器，文件过大、读取失败或本地存储受限时必须给出页面内状态提示。
+- 综合搜索、标题、作者和标签输入框应实现为 Token Field：输入半角 `+` 或全角 `＋` 生成独立关键词 token，例如 `日系 + 制服`；回车和失焦会提交草稿，退格/删除可移除已选 token，最终查询仍使用同一属性内 AND 语义。
 - 修改过滤器后可点击搜索。
 - 表头提供全选当前页。
 - 每行提供打开 Notion 页面和打开小红书链接。
@@ -429,6 +451,7 @@ if target_album_id not in ids:
 - 野生标签使用由标签文字稳定决定的彩色胶囊，同名标签保持同色；专辑 Relation 标签继续使用统一专辑色，避免两类信息混淆。
 - 普通标签颜色保持柔和，不使用高饱和大红色。
 - “专辑管理”提供“创建新专辑”和“更改名字”；新建时要求选择六大主领域，重命名时保留原有笔记关联和 AI 语义说明。
+- 批量整理区必须保留真实的 `button`、`select` 等原生控件；键盘焦点使用 `:focus-visible` 和系统 `Highlight` 色绘制焦点环，所属操作卡片仅用 `:has(:focus-visible)` 提供分组提示。禁用控件由原生 `disabled` 跳过，过长内容以省略号显示但不能改写真实值或控件语义。
 - 批量追加成功后刷新结果列表。
 - 下滑到列表底部时自动加载更多结果。
 - 右键卡片封面可打开管理菜单，将笔记移入 Notion 回收站。
@@ -471,7 +494,7 @@ http://127.0.0.1:8765
 为了减少手动输入命令，可增加一个 Notion 可嵌入的启动页：
 
 - `program/web/notion_launcher.html`：静态 HTML，不包含 Notion token，只提供一个本地启动按钮。
-- `program/install_console_protocol.ps1`：注册 `xhs-notion-console://` Windows 用户级协议。
+- `program/install_console_protocol.ps1`：注册 `xhs-notion-console://` Windows 用户级协议，同时为当前用户安装登录自启动服务。
 - `program/start_management_console.ps1`：被协议唤起后启动本地服务；在 `mode=cloudflared-quick` 时尝试启动 Cloudflare Quick Tunnel。
 
 使用方式：
@@ -480,7 +503,7 @@ http://127.0.0.1:8765
 powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
 ```
 
-然后在 Notion 中上传或嵌入 `program/web/notion_launcher.html`。点击“启动小红书收藏管理”会启动本地服务并打开 `http://127.0.0.1:8765`。如果需要生成 `https://*.trycloudflare.com` 地址，可手动运行 `start_management_console.ps1 -Mode cloudflared-quick`，复制后用于 Notion `/embed`。
+安装脚本会立即启动本地服务，并让它在当前 Windows 用户下次登录时自动后台启动。Notion 收藏中心的主按钮应直接链接 `http://127.0.0.1:8765`，避免沙箱拦截自定义协议。也可以在 Notion 中上传或嵌入 `program/web/notion_launcher.html` 作为手动启动兜底。点击“启动小红书收藏管理”会尝试启动本地服务并打开管理台。如果需要生成 `https://*.trycloudflare.com` 地址，可手动运行 `start_management_console.ps1 -Mode cloudflared-quick`，复制后用于 Notion `/embed`。
 
 边界：
 

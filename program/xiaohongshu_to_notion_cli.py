@@ -719,6 +719,23 @@ class NotionSaver:
                     print(f"[WARN] Fallback external cover failed: {fallback_exc}")
             return None
 
+    def persist_images_for_page(self, page_id, image_urls):
+        if not page_id or not self.cover_cache_enabled:
+            return []
+
+        cached = []
+        seen = set()
+        for image_url in image_urls or []:
+            clean_url = str(image_url or "").strip()
+            if not clean_url or clean_url in seen:
+                continue
+            seen.add(clean_url)
+            try:
+                cached.append(self.cover_service.cache_cover(clean_url, page_id=page_id))
+            except CoverAssetError as exc:
+                print(f"[WARN] Image cache failed: {exc}")
+        return cached
+
     def check_duplicate(self, note_id):
         """检查Notion数据库中是否已存在该笔记"""
         if not note_id:
@@ -894,6 +911,9 @@ class NotionSaver:
                     print_album_candidates(data.get("album_candidates", []), data.get("album"))
                     if data.get("cover"):
                         self.persist_cover_for_page(page_id, data.get("cover"))
+                    if data.get("image_urls"):
+                        cached_images = self.persist_images_for_page(page_id, data.get("image_urls"))
+                        print(f"   已缓存图片: {len(cached_images)} 张".encode('gbk', 'ignore').decode('gbk', 'ignore'))
 
                     return page_id
                 else:
@@ -1238,6 +1258,8 @@ def main():
                     args.tags = ",".join(extracted.get('tags'))
                 if not args.cover and extracted.get('cover_url'):
                     args.cover = extracted.get('cover_url')
+                if extracted.get('image_urls'):
+                    data["image_urls"] = extracted.get('image_urls')
                 print("[OK] 提取成功！")
             else:
                 print("[WARN] 提取失败，将使用已提供的卡片字段或默认占位文本。")

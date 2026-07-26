@@ -16,6 +16,7 @@ from notion_manager import (  # noqa: E402
     TAGS_PROP,
     TITLE_PROP,
     URL_PROP,
+    VALID_STATUSES,
     NotionNoteManager,
     canonical_duplicate_key,
     normalize_tags,
@@ -157,6 +158,23 @@ class BatchManagerTests(unittest.TestCase):
         self.assertFalse(
             manager.matches_filters(note, {"title": "日系 + 调色"})
         )
+
+    def test_batch_statuses_are_simplified(self):
+        self.assertEqual(VALID_STATUSES, ("待阅读", "已整理", "待执行"))
+
+    def test_status_update_accepts_only_simplified_statuses(self):
+        pages = {
+            "page-1": make_page("page-1", status="待阅读"),
+        }
+        manager = self.make_manager(pages)
+
+        result = manager.update_pages_status(["page-1"], "待执行")
+
+        self.assertEqual(result["updated"], 1)
+        patch = manager.property_patches[0][1]
+        self.assertEqual(patch[STATUS_PROP]["select"]["name"], "待执行")
+        with self.assertRaisesRegex(Exception, "不支持的状态"):
+            manager.update_pages_status(["page-1"], "已实践")
 
     def test_album_move_replaces_existing_relations(self):
         pages = {

@@ -53,6 +53,15 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         if path == "/api/notes":
             self.handle_api(lambda: self.manager.query_notes(query))
             return
+        if path == "/api/notes/images":
+            refresh = as_bool(query.get("refresh"), default=False)
+            self.handle_api(
+                lambda: self.manager.list_note_images(
+                    query.get("page_id", ""),
+                    refresh=refresh,
+                )
+            )
+            return
         if path == "/api/debug/cover":
             try:
                 limit = int(query.get("limit", "3"))
@@ -90,6 +99,12 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
                     status=HTTPStatus.BAD_REQUEST,
                 )
             return
+        if path == "/api/albums/order":
+            body = self.read_json_body()
+            self.handle_api(
+                lambda: self.manager.update_album_order(body.get("album_ids", []))
+            )
+            return
         if path == "/api/notes/batch":
             body = self.read_json_body()
             self.handle_api(
@@ -123,6 +138,9 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
                     upload_to_notion=as_bool(body.get("upload_to_notion"), default=False),
                 )
             )
+            return
+        if path == "/api/materials/photo":
+            self.handle_api(lambda: self.manager.create_photo_materials(self.read_json_body()))
             return
         self.write_json({"ok": False, "error": "接口不存在。"}, status=HTTPStatus.NOT_FOUND)
 

@@ -26,6 +26,7 @@
 | `album_map.json` | 专辑名到 Notion relation page id 的映射 |
 | `album_domains.json` | 专辑名到 Notion「主领域」的映射，供管理台分组定位 |
 | `album_descriptions.json` | 专辑名到语义描述的映射，供 DeepSeek 推理参考 |
+| `album_order.json` | 管理台专辑人工排序，保存 Notion 专辑 page id 顺序 |
 | `update_album_map.py` | 从 Notion 数据库刷新专辑映射与主领域映射 |
 | `notion_manager.py` | 收藏管理台后端核心，负责查询、过滤、追加专辑 Relation 和移入回收站 |
 | `manage_server.py` | 本地 Web 收藏管理台服务入口 |
@@ -73,10 +74,14 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 ```text
 NOTION_TIMEOUT=15
 NOTION_VERIFY_SSL=false
+NOTION_MATERIAL_DATABASE_ID=
+NOTION_MATERIAL_DATA_SOURCE_ID=
 NOTION_FILE_UPLOAD_VERSION=2026-03-11
 COVER_CACHE_ENABLED=true
 COVER_UPLOAD_TO_NOTION=true
 COVER_CACHE_DIR=
+XHS_FETCH_MIN_INTERVAL_SECONDS=3
+XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS=1
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 ```
@@ -103,6 +108,53 @@ Content-Type: application/json
 ```
 
 返回的 `asset` 包含本地文件、哈希、源 URL、关联页面和 Notion `file_upload` id，适合扩展端复用。
+
+## 摄影拆图素材库
+
+管理台卡片中的“拆图”按钮会打开当前笔记的图片选择窗口。新收藏的图文笔记会在保存后缓存全部图片；旧笔记会在首次拆图时按原文链接重新提取图片。选择图片后，管理台会把手动填写的构图标签、动作标签、场景、景别、机位角度、主体类型、光线标签、色彩标签、情绪氛围、学习点、复刻提示、状态、评分和是否适合复刻写入独立的摄影素材库，不做 AI 分析。
+
+为降低对小红书的密集请求风险，拆图会优先读取本地缓存；只有旧笔记首次拆图或手动点击“重新提取图片”时才请求原文页面。默认限速为：请求原文页面间隔至少 `3` 秒，下载小红书图片间隔至少 `1` 秒，可通过 `XHS_FETCH_MIN_INTERVAL_SECONDS` 和 `XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS` 调整。
+
+使用前在 `program/config.json` 或环境变量中配置：
+
+```text
+NOTION_MATERIAL_DATABASE_ID=your_material_database_id
+NOTION_MATERIAL_DATA_SOURCE_ID=
+```
+
+素材库建议包含以下字段；管理台只写入实际存在且类型匹配的字段：
+
+| 字段 | 建议类型 | 用途 |
+| --- | --- | --- |
+| `标题` | Title | 素材标题 |
+| `图片` | Files | 选中的图片 |
+| `图片链接` | URL | 原始图片 URL |
+| `来源笔记` | Relation | 关联内容总库中的原笔记 |
+| `原文链接` | URL | 小红书原文 |
+| `来源标题` | Rich text | 原笔记标题 |
+| `作者` | Rich text | 原作者 |
+| `构图标签` | Multi-select | 手动记录构图方式 |
+| `动作标签` | Multi-select | 人物动作、姿势和可复刻动作 |
+| `光线标签` | Multi-select | 手动记录光线特征 |
+| `色彩标签` | Multi-select | 手动记录色彩特征 |
+| `场景` | Select 或 Multi-select | 拍摄场景 |
+| `景别` | Select | 特写、近景、中景、全身、远景、空镜 |
+| `机位角度` | Multi-select | 低机位、俯拍、平视、侧面等 |
+| `主体类型` | Multi-select | 人物、背影、手部、建筑、食物等 |
+| `情绪氛围` | Multi-select | 松弛、清冷、电影感、生活感等 |
+| `学习点` | Rich text | 画面拆解笔记 |
+| `复刻提示` | Rich text | 后续拍摄可照做的动作 |
+| `状态` | Select | `待分析`、`已拆解`、`已复刻`、`已内化` |
+| `来源图片序号` | Number | 原笔记中的图片序号 |
+| `适合复刻` | Checkbox | 是否适合后续照着拍 |
+| `评分` | Number | 1-5 分的主观收藏价值 |
+
+推荐在 Notion 里配置几个常用视图：
+
+- `按色彩找图`：Gallery 视图，按 `色彩标签` 筛选或分组。
+- `按动作找图`：Gallery 视图，按 `动作标签` 筛选，适合找姿势参考。
+- `按构图找图`：Gallery 视图，按 `构图标签` 筛选，适合复盘构图方法。
+- `可复刻清单`：筛选 `适合复刻` 为勾选，按 `评分` 降序。
 
 ## 常用命令
 
@@ -172,7 +224,8 @@ http://127.0.0.1:8765
 管理台支持：
 
 - 搜索标题、简介、作者和野生标签。
-- 顶部综合搜索、标题、作者和标签输入框支持用 `+` 分隔多个关键词；同一输入框内的关键词必须全部命中。
+- 可上传本地图片作为管理台背景；前端会自动缩放压缩后保存到当前浏览器，图片过大或浏览器存储受限时会给出页面提示。
+- 顶部综合搜索、标题、作者和标签使用 Token Field：输入 `+` 或全角 `＋` 会生成独立关键词 token，回车/失焦会提交当前草稿；同一输入框内的关键词必须全部命中。
 - 按标题、作者、标签、状态、当前专辑过滤。
 - 下滑自动加载更多结果。
 - 多选或全选当前结果。
@@ -183,8 +236,10 @@ http://127.0.0.1:8765
 - 批量重新缓存并上传失效封面。
 - 批量清理空值、占位词与重复标签。
 - 批量合并重复记录；有效字段会汇总到保留项，重复项移入 Notion 回收站。
+- 批量整理区保留原生按钮和下拉框，支持 Tab 键导航与系统高亮色焦点环；禁用项不会获得焦点，过长内容会在不改变真实值的前提下省略显示。
 - 结果卡片中的作者名使用独立身份胶囊展示，点击即可复制完整作者名；野生标签按文字稳定分配柔和彩色样式，不使用高饱和大红色，专辑标签仍保持统一紫色。
 - 在左侧可收起的“AI 专辑语义说明”工作区中，按 Notion 六大「主领域」定位专辑，再分别填写“收录什么”“排除什么”“与相近专辑的区别”；保存时三部分会组合写入 `album_descriptions.json`，后续 DeepSeek 专辑推理会立即读取。旧版自由文本说明会自动载入“收录什么”。
+- 专辑过滤器和批量目标专辑使用管理台自绘选择器，避免浏览器原生下拉菜单在嵌入页里出现白底弹层；专辑下拉列表和左侧专辑列表都支持拖拽排序，顺序保存到 `album_order.json`，并同步影响过滤器、批量目标专辑和 AI 专辑说明列表。
 - 右键卡片封面，将笔记移入 Notion 回收站。
 
 “追加”会保留原专辑，“移动”会用目标专辑替换已有 Relation，“移除”只删除指定专辑 Relation。
@@ -200,6 +255,8 @@ AI 重分类单次最多处理 20 篇，其余批量操作单次最多处理 100
 powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
 ```
 
+安装脚本会注册本机协议、立即启动管理台，并写入当前 Windows 用户的登录自启动项。收藏中心里的普通按钮可以继续直接链接 `http://127.0.0.1:8765`；登录后服务会在后台可用，不需要每次手动启动。
+
 之后可在启动页中点击：
 
 - `启动小红书收藏管理`：调用 `xhs-notion-console://start?mode=local`，启动本地服务并打开 `http://127.0.0.1:8765`。
@@ -208,7 +265,7 @@ powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
 
 Quick Tunnel 地址是临时地址；固定 Notion 嵌入入口需要 Cloudflare Named Tunnel、自有域名或云端部署，并增加认证。
 
-已知限制：Notion 上传的 HTML 运行在沙箱 iframe 中，可能会拦截 `xhs-notion-console://` 外部协议和弹窗。如果按钮无反应，优先确认本地服务 `http://127.0.0.1:8765/api/health`，再使用浏览器书签或桌面快捷方式作为稳定入口。
+已知限制：Notion 上传的 HTML 运行在沙箱 iframe 中，可能会拦截 `xhs-notion-console://` 外部协议和弹窗。优先使用登录自启动服务配合普通的 `http://127.0.0.1:8765` 链接；如果按钮无反应，先确认 `http://127.0.0.1:8765/api/health`，再使用本机协议、浏览器书签或桌面快捷方式。
 
 ## 注意事项
 

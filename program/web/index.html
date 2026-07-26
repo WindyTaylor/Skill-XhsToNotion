@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer-when-downgrade" />
     <title>小红书收藏管理台</title>
-    <link rel="stylesheet" href="/styles.css?v=20260719-album-create-rename" />
+    <link rel="stylesheet" href="/styles.css?v=20260726-photo-save-feedback" />
   </head>
   <body>
+    <div id="backgroundLayer" class="background-layer" aria-hidden="true"></div>
     <main class="app-shell">
       <div class="control-dock">
       <header class="brand-row">
@@ -73,12 +74,8 @@
           <select id="statusSelect">
             <option value="">全部</option>
             <option value="待阅读">待阅读</option>
-            <option value="待路由">待路由</option>
             <option value="已整理">已整理</option>
-            <option value="已沉淀">已沉淀</option>
-            <option value="已实践">已实践</option>
-            <option value="长期参考">长期参考</option>
-            <option value="已废弃">已废弃</option>
+            <option value="待执行">待执行</option>
           </select>
         </span>
         <span class="chip">
@@ -147,12 +144,8 @@
               <select id="batchStatusSelect" class="action-select" aria-label="目标状态">
                 <option value="">选择状态</option>
                 <option value="待阅读">待阅读</option>
-                <option value="待路由">待路由</option>
                 <option value="已整理">已整理</option>
-                <option value="已沉淀">已沉淀</option>
-                <option value="已实践">已实践</option>
-                <option value="长期参考">长期参考</option>
-                <option value="已废弃">已废弃</option>
+                <option value="待执行">待执行</option>
               </select>
               <button id="batchStatusButton" class="action-button is-compact" type="button" disabled>应用</button>
             </div>
@@ -342,6 +335,12 @@
       </section>
 
       <section class="grid-wrap" aria-label="搜索结果">
+        <div class="selection-gesture-hint">
+          <span>框选模式</span>
+          在卡片区域按住鼠标拖拽可批量选择，按住 Ctrl / Shift 可追加选择。
+          <strong id="selectionInlineCount" class="selection-inline-count">未选择</strong>
+        </div>
+        <div id="selectionMarquee" class="selection-marquee" aria-hidden="true"></div>
         <div id="notesGrid" class="grid"></div>
         <div id="emptyState" class="empty-state">暂无结果</div>
         <div id="loadMoreStatus" class="load-more-status" aria-live="polite"></div>
@@ -418,6 +417,136 @@
       </form>
     </section>
 
-    <script src="/app.js?v=20260719-album-create-rename"></script>
+    <button
+      id="imagePickerBackdrop"
+      class="image-picker-backdrop"
+      type="button"
+      aria-label="关闭摄影拆图窗口"
+      tabindex="-1"
+    ></button>
+    <section
+      id="imagePickerModal"
+      class="image-picker-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="imagePickerTitle"
+      aria-hidden="true"
+    >
+      <header class="image-picker-header">
+        <div>
+          <span class="image-picker-eyebrow">PHOTO MATERIALS</span>
+          <h2 id="imagePickerTitle">摄影拆图</h2>
+          <p id="imagePickerSubtitle">选择要沉淀的图片，手动填写学习信息后保存到素材库。</p>
+        </div>
+        <button id="imagePickerClose" class="album-editor-close" type="button" aria-label="关闭">×</button>
+      </header>
+      <div class="image-picker-layout">
+        <div class="image-picker-main">
+          <div class="image-picker-toolbar">
+            <span id="imagePickerMeta">尚未加载图片</span>
+            <button id="imagePickerRefresh" class="secondary-button" type="button">重新提取图片</button>
+          </div>
+          <div id="imagePickerGrid" class="image-picker-grid"></div>
+        </div>
+        <form id="imageMaterialForm" class="image-material-form">
+          <label>
+            <span>构图标签</span>
+            <input id="compositionTagsInput" type="text" placeholder="三分法, 引导线, 留白, 可参考" autocomplete="off" />
+          </label>
+          <label>
+            <span>色彩标签</span>
+            <input id="colorTagsInput" type="text" placeholder="低饱和, 暖色, 对比色, 可参考" autocomplete="off" />
+          </label>
+          <label>
+            <span>动作标签</span>
+            <input id="actionTagsInput" type="text" placeholder="回头, 走路, 低头, 伸手" autocomplete="off" />
+          </label>
+          <label>
+            <span>服装类型</span>
+            <input id="clothingTagsInput" type="text" placeholder="水手服, 旗袍, lolita, 清楚系, ol" autocomplete="off" />
+          </label>
+          <label>
+            <span>情绪氛围</span>
+            <input id="moodTagsInput" type="text" placeholder="日系, 电影感, 氛围感, 日常感, 网感" autocomplete="off" />
+          </label>
+          <label>
+            <span>人数类型</span>
+            <input id="peopleTagsInput" type="text" placeholder="单人, 双人, 多人" autocomplete="off" />
+          </label>
+          <label>
+            <span>光线标签</span>
+            <input id="lightTagsInput" type="text" placeholder="逆光, 顺光, 闪光灯" autocomplete="off" />
+          </label>
+          <label>
+            <span>场景</span>
+            <input id="sceneInput" type="text" placeholder="街拍, 人像, 室内, 探店, 街道, 场照, 大景" autocomplete="off" />
+          </label>
+          <label>
+            <span>时间类型</span>
+            <input id="timeTagsInput" type="text" placeholder="白天, 夜景" autocomplete="off" />
+          </label>
+          <label>
+            <span>天气类型</span>
+            <input id="weatherTagsInput" type="text" placeholder="晴天, 阴天" autocomplete="off" />
+          </label>
+          <label>
+            <span>机位角度</span>
+            <input id="angleTagsInput" type="text" placeholder="低机位, 俯拍, 平视, 侧面" autocomplete="off" />
+          </label>
+          <label>
+            <span>焦段类型</span>
+            <input id="focalLengthTagsInput" type="text" placeholder="广角, 50, 85, 长焦" autocomplete="off" />
+          </label>
+          <label>
+            <span>景别</span>
+            <input id="shotTypeSelect" type="text" placeholder="特写, 半身, 全身, 大景, 空镜" autocomplete="off" />
+          </label>
+          <label>
+            <span>新增标签</span>
+            <input id="customTagsInput" type="text" placeholder="直接输入标签，回车确认" autocomplete="off" />
+          </label>
+          <label class="image-material-wide">
+            <span>学习点</span>
+            <textarea id="learningNoteTextarea" placeholder="写下这张图值得学习的画面要点"></textarea>
+          </label>
+          <label class="image-material-wide">
+            <span>复刻提示</span>
+            <textarea id="remakeHintTextarea" placeholder="写下以后拍摄时可以照着做的动作"></textarea>
+          </label>
+          <label>
+            <span>状态</span>
+            <select id="materialStatusSelect">
+              <option value="待分析">待分析</option>
+              <option value="已拆解">已拆解</option>
+              <option value="已复刻">已复刻</option>
+              <option value="已内化">已内化</option>
+            </select>
+          </label>
+          <label class="image-material-rating-field">
+            <span>评分</span>
+            <input id="materialRatingSelect" type="hidden" value="" />
+            <div id="materialRatingStars" class="material-rating-stars" role="radiogroup" aria-label="评分">
+              <button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="1 分" data-rating="1">★</button>
+              <button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="2 分" data-rating="2">★</button>
+              <button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="3 分" data-rating="3">★</button>
+              <button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="4 分" data-rating="4">★</button>
+              <button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="5 分" data-rating="5">★</button>
+            </div>
+          </label>
+          <label class="image-material-toggle">
+            <input id="remakeReadyCheckbox" type="checkbox" />
+            <span>适合复刻</span>
+          </label>
+          <label class="image-material-toggle">
+            <input id="materialUploadCheckbox" type="checkbox" checked />
+            <span>上传为 Notion 托管文件</span>
+          </label>
+          <div id="imageMaterialNotice" class="image-material-notice" role="status" aria-live="polite"></div>
+          <button id="saveMaterialsButton" class="primary-button" type="submit" disabled>保存选中图片</button>
+        </form>
+      </div>
+    </section>
+
+    <script src="/app.js?v=20260726-material-two-column-stars"></script>
   </body>
 </html>

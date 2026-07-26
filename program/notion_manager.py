@@ -5,6 +5,7 @@ import json
 import os
 import re
 import threading
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -29,6 +30,7 @@ CONFIG_FILE = PROGRAM_DIR / "config.json"
 ALBUM_MAP_FILE = PROGRAM_DIR / "album_map.json"
 ALBUM_DESCRIPTIONS_FILE = PROGRAM_DIR / "album_descriptions.json"
 ALBUM_DOMAINS_FILE = PROGRAM_DIR / "album_domains.json"
+ALBUM_ORDER_FILE = PROGRAM_DIR / "album_order.json"
 
 TITLE_PROP = "标题"
 URL_PROP = "小红书链接"
@@ -39,15 +41,44 @@ TAGS_PROP = "野生标签"
 COLOR_TAGS_PROP = "彩色标签"
 ALBUM_PROP = "库B：专辑标签库"
 COVER_URL_PROP = "封面"
+MATERIAL_TITLE_PROP = "标题"
+MATERIAL_IMAGE_PROP = "图片"
+MATERIAL_IMAGE_URL_PROP = "图片链接"
+MATERIAL_SOURCE_NOTE_PROP = "来源笔记"
+MATERIAL_SOURCE_URL_PROP = "原文链接"
+MATERIAL_SOURCE_TITLE_PROP = "来源标题"
+MATERIAL_AUTHOR_PROP = "作者"
+MATERIAL_COMPOSITION_PROP = "构图标签"
+MATERIAL_ACTION_PROP = "动作标签"
+MATERIAL_LIGHT_PROP = "光线标签"
+MATERIAL_COLOR_PROP = "色彩标签"
+MATERIAL_SCENE_PROP = "场景"
+MATERIAL_SHOT_PROP = "景别"
+MATERIAL_CLOTHING_PROP = "服装类型"
+MATERIAL_WEATHER_PROP = "天气类型"
+MATERIAL_TIME_PROP = "时间类型"
+MATERIAL_PEOPLE_PROP = "人数类型"
+MATERIAL_FOCAL_LENGTH_PROP = "焦段类型"
+MATERIAL_ANGLE_PROP = "机位角度"
+MATERIAL_MOOD_PROP = "情绪氛围"
+MATERIAL_CUSTOM_TAGS_PROP = "新增标签"
+MATERIAL_LEARNING_PROP = "学习点"
+MATERIAL_REMAKE_PROP = "复刻提示"
+MATERIAL_STATUS_PROP = "状态"
+MATERIAL_IMAGE_INDEX_PROP = "来源图片序号"
+MATERIAL_REMAKE_READY_PROP = "适合复刻"
+MATERIAL_RATING_PROP = "评分"
 
 VALID_STATUSES = (
     "待阅读",
-    "待路由",
     "已整理",
-    "已沉淀",
-    "已实践",
-    "长期参考",
-    "已废弃",
+    "待执行",
+)
+VALID_MATERIAL_STATUSES = (
+    "待分析",
+    "已拆解",
+    "已复刻",
+    "已内化",
 )
 MAX_BATCH_SIZE = 100
 MAX_AI_BATCH_SIZE = 20
@@ -74,6 +105,8 @@ MAX_ALBUM_DESCRIPTION_LENGTH = 2000
 MAX_ALBUM_NAME_LENGTH = 100
 ALBUM_DESCRIPTIONS_LOCK = threading.Lock()
 ALBUM_METADATA_LOCK = threading.Lock()
+XHS_REQUEST_LOCK = threading.Lock()
+XHS_LAST_REQUEST_AT = 0.0
 VALID_ALBUM_DOMAINS = (
     "🛠️ 硬核技术与职业效能",
     "📸 视觉叙事与影像实验室",
@@ -102,6 +135,15 @@ def _as_bool(value, default=False):
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _as_float(value, default=0.0):
+    if value is None or value == "":
+        return default
+    try:
+        return max(float(value), 0.0)
+    except (TypeError, ValueError):
+        return default
 
 
 def _compact_text(value):
@@ -142,6 +184,16 @@ def load_config():
         or file_config.get("NOTION_DATA_SOURCE_ID")
         or ""
     )
+    material_database_id = (
+        os.getenv("NOTION_MATERIAL_DATABASE_ID")
+        or file_config.get("NOTION_MATERIAL_DATABASE_ID")
+        or ""
+    )
+    material_data_source_id = (
+        os.getenv("NOTION_MATERIAL_DATA_SOURCE_ID")
+        or file_config.get("NOTION_MATERIAL_DATA_SOURCE_ID")
+        or ""
+    )
     notion_version = (
         os.getenv("NOTION_VERSION")
         or file_config.get("NOTION_VERSION")
@@ -161,6 +213,16 @@ def load_config():
         os.getenv("NOTION_VERIFY_SSL", file_config.get("NOTION_VERIFY_SSL")),
         default=False,
     )
+    xhs_fetch_min_interval = _as_float(
+        os.getenv("XHS_FETCH_MIN_INTERVAL_SECONDS")
+        or file_config.get("XHS_FETCH_MIN_INTERVAL_SECONDS"),
+        default=3.0,
+    )
+    xhs_image_download_interval = _as_float(
+        os.getenv("XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS")
+        or file_config.get("XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS"),
+        default=1.0,
+    )
 
     if not notion_api_key:
         raise NotionConfigError("缺少 NOTION_API_KEY，请先配置 Notion integration token。")
@@ -171,10 +233,14 @@ def load_config():
         "notion_api_key": notion_api_key,
         "notion_database_id": notion_database_id,
         "notion_data_source_id": notion_data_source_id,
+        "material_database_id": material_database_id,
+        "material_data_source_id": material_data_source_id,
         "notion_version": notion_version,
         "notion_file_upload_version": notion_file_upload_version,
         "notion_timeout": notion_timeout,
         "verify_ssl": verify_ssl,
+        "xhs_fetch_min_interval": xhs_fetch_min_interval,
+        "xhs_image_download_interval": xhs_image_download_interval,
         "raw_config": file_config,
     }
 
@@ -214,6 +280,26 @@ def load_album_domains(path=ALBUM_DOMAINS_FILE):
     }
 
 
+def load_album_order(path=ALBUM_ORDER_FILE):
+    if not path.exists():
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise NotionManagerError(f"读取专辑排序失败: {exc}") from exc
+    if not isinstance(data, list):
+        return []
+    order = []
+    seen = set()
+    for album_id in data:
+        clean_id = str(album_id).strip()
+        if clean_id and clean_id not in seen:
+            order.append(clean_id)
+            seen.add(clean_id)
+    return order
+
+
 def save_album_descriptions(descriptions, path=ALBUM_DESCRIPTIONS_FILE):
     clean_descriptions = {
         str(name).strip(): str(description).strip()
@@ -251,6 +337,45 @@ def save_album_domains(domains, path=ALBUM_DOMAINS_FILE):
         if str(name).strip() and str(domain).strip()
     }
     _save_json_mapping(clean_domains, path, "保存专辑主领域失败")
+
+
+def normalize_album_order(album_ids, album_map):
+    current_ids = {
+        str(album_id).strip()
+        for album_id in album_map.values()
+        if str(album_id).strip()
+    }
+    order = []
+    seen = set()
+    for album_id in album_ids:
+        clean_id = str(album_id).strip()
+        if clean_id and clean_id in current_ids and clean_id not in seen:
+            order.append(clean_id)
+            seen.add(clean_id)
+    for _name, album_id in sorted(album_map.items(), key=lambda item: item[0].casefold()):
+        clean_id = str(album_id).strip()
+        if clean_id and clean_id not in seen:
+            order.append(clean_id)
+            seen.add(clean_id)
+    return order
+
+
+def save_album_order(album_ids, album_map, path=ALBUM_ORDER_FILE):
+    order = normalize_album_order(album_ids, album_map)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(order, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(temp_path, path)
+    except OSError as exc:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise NotionManagerError(f"保存专辑排序失败: {exc}") from exc
+    return order
 
 
 def _save_json_mapping(mapping, path, error_label):
@@ -386,10 +511,14 @@ class NotionNoteManager:
         self.notion_api_key = config["notion_api_key"]
         self.database_id = config["notion_database_id"]
         self.data_source_id = config["notion_data_source_id"]
+        self.material_database_id = config["material_database_id"]
+        self.material_data_source_id = config["material_data_source_id"]
         self.notion_version = config["notion_version"]
         self.notion_file_upload_version = config["notion_file_upload_version"]
         self.notion_timeout = config["notion_timeout"]
         self.verify_ssl = config["verify_ssl"]
+        self.xhs_fetch_min_interval = config["xhs_fetch_min_interval"]
+        self.xhs_image_download_interval = config["xhs_image_download_interval"]
         self.session = requests.Session()
         self.album_map = load_album_map()
         self.album_id_to_name = {album_id: name for name, album_id in self.album_map.items()}
@@ -436,6 +565,19 @@ class NotionNoteManager:
             return response.json()
         return {}
 
+    def ordered_album_items(self):
+        order_file = getattr(self, "album_order_file", ALBUM_ORDER_FILE)
+        order = load_album_order(order_file)
+        rank = {album_id: index for index, album_id in enumerate(order)}
+        fallback_rank = len(rank)
+        return sorted(
+            self.album_map.items(),
+            key=lambda item: (
+                rank.get(item[1], fallback_rank),
+                item[0].casefold(),
+            ),
+        )
+
     def list_albums(self):
         domain_file = getattr(self, "album_domains_file", ALBUM_DOMAINS_FILE)
         album_domains = load_album_domains(domain_file)
@@ -445,7 +587,7 @@ class NotionNoteManager:
                 "id": album_id,
                 "domain": album_domains.get(name, ""),
             }
-            for name, album_id in sorted(self.album_map.items(), key=lambda item: item[0])
+            for name, album_id in self.ordered_album_items()
         ]
 
     def get_album_source_context(self):
@@ -563,13 +705,16 @@ class NotionNoteManager:
 
         album_map_file = getattr(self, "album_map_file", ALBUM_MAP_FILE)
         domain_file = getattr(self, "album_domains_file", ALBUM_DOMAINS_FILE)
+        order_file = getattr(self, "album_order_file", ALBUM_ORDER_FILE)
         with ALBUM_METADATA_LOCK:
             album_domains = load_album_domains(domain_file)
+            album_order = load_album_order(order_file)
             self.album_map[clean_name] = album_id
             self.album_id_to_name[album_id] = clean_name
             album_domains[clean_name] = clean_domain
             save_album_map(self.album_map, album_map_file)
             save_album_domains(album_domains, domain_file)
+            save_album_order([*album_order, album_id], self.album_map, order_file)
 
         return {
             "ok": True,
@@ -656,12 +801,24 @@ class NotionNoteManager:
                 "domain": album_domains.get(name, ""),
                 "description": descriptions.get(name, ""),
             }
-            for name, album_id in sorted(self.album_map.items(), key=lambda item: item[0])
+            for name, album_id in self.ordered_album_items()
         ]
         return {
             "albums": albums,
             "described": sum(bool(item["description"]) for item in albums),
             "total": len(albums),
+        }
+
+    def update_album_order(self, album_ids):
+        if not isinstance(album_ids, list):
+            raise NotionManagerError("专辑排序必须是数组。")
+        order_file = getattr(self, "album_order_file", ALBUM_ORDER_FILE)
+        with ALBUM_METADATA_LOCK:
+            save_album_order(album_ids, self.album_map, order_file)
+        return {
+            "ok": True,
+            "albums": self.list_albums(),
+            "message": "专辑顺序已保存。",
         }
 
     def update_album_description(self, album_name, description):
@@ -719,6 +876,7 @@ class NotionNoteManager:
     def cache_cover_asset(self, source_url, page_id="", upload_to_notion=False):
         """Cache a cover locally, optionally upload it and set it as page cover."""
         try:
+            self.wait_before_external_image_download(source_url)
             if upload_to_notion:
                 if not page_id:
                     raise NotionManagerError("上传到 Notion 时需要 page_id。")
@@ -728,6 +886,446 @@ class NotionNoteManager:
             return {"ok": True, "asset": result}
         except CoverAssetError as exc:
             raise NotionManagerError(str(exc)) from exc
+
+    @staticmethod
+    def is_xiaohongshu_url(url):
+        try:
+            host = urlsplit(str(url or "")).netloc.lower()
+        except ValueError:
+            return False
+        return host.endswith("xiaohongshu.com") or host.endswith("xhscdn.com")
+
+    def wait_for_xhs_request(self, min_interval):
+        if min_interval <= 0:
+            return
+        global XHS_LAST_REQUEST_AT
+        with XHS_REQUEST_LOCK:
+            now = time.monotonic()
+            wait_seconds = min_interval - (now - XHS_LAST_REQUEST_AT)
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+            XHS_LAST_REQUEST_AT = time.monotonic()
+
+    def wait_before_external_image_download(self, url):
+        if self.is_xiaohongshu_url(url):
+            self.wait_for_xhs_request(self.xhs_image_download_interval)
+
+    def list_note_images(self, page_id, refresh=False):
+        page_id = str(page_id or "").strip()
+        if not page_id:
+            raise NotionManagerError("缺少笔记 ID。")
+
+        page = self.get_page(page_id)
+        note = self.page_to_note(page)
+        cached_assets = self.cover_store.get_assets_for_page(page_id)
+        if len(cached_assets) > 1 and not refresh:
+            return {
+                "ok": True,
+                "note": note,
+                "images": self._assets_to_image_items(cached_assets),
+                "source": "cache",
+            }
+
+        image_urls = []
+        source_url = note.get("url") or ""
+        if source_url:
+            try:
+                from local_extractor import XiaohongshuExtractor
+
+                if self.is_xiaohongshu_url(source_url):
+                    self.wait_for_xhs_request(self.xhs_fetch_min_interval)
+                extracted = XiaohongshuExtractor().extract_from_url(source_url)
+                image_urls = extracted.get("image_urls") or []
+            except Exception as exc:
+                if not cached_assets:
+                    raise NotionManagerError(f"重新提取图片失败: {exc}") from exc
+
+        if not image_urls:
+            image_urls = [
+                url
+                for url in (
+                    note.get("cover_source"),
+                    note.get("cover_notion"),
+                    note.get("cover"),
+                )
+                if url
+            ]
+
+        assets = []
+        seen = set()
+        for image_url in image_urls:
+            clean_url = str(image_url or "").strip()
+            if not clean_url or clean_url in seen:
+                continue
+            seen.add(clean_url)
+            try:
+                self.wait_before_external_image_download(clean_url)
+                assets.append(self.cover_service.cache_cover(clean_url, page_id=page_id))
+            except CoverAssetError:
+                assets.append({
+                    "id": "",
+                    "source_urls": [clean_url],
+                    "local_url": "",
+                    "filename": "",
+                })
+
+        if not assets:
+            assets = cached_assets
+
+        return {
+            "ok": True,
+            "note": note,
+            "images": self._assets_to_image_items(assets, ordered_urls=image_urls),
+            "source": "refreshed" if image_urls else "cache",
+        }
+
+    def _assets_to_image_items(self, assets, ordered_urls=None):
+        ordered_urls = ordered_urls or []
+        by_url = {}
+        fallback = []
+        for asset in assets:
+            source_urls = asset.get("source_urls") or []
+            if not source_urls:
+                fallback.append(asset)
+            for source_url in source_urls:
+                by_url.setdefault(source_url, asset)
+
+        ordered_assets = []
+        seen_ids = set()
+        for source_url in ordered_urls:
+            asset = by_url.get(source_url)
+            if not asset:
+                continue
+            marker = asset.get("id") or source_url
+            if marker in seen_ids:
+                continue
+            seen_ids.add(marker)
+            ordered_assets.append(asset)
+        for asset in list(assets) + fallback:
+            marker = asset.get("id") or "|".join(asset.get("source_urls") or [])
+            if marker and marker in seen_ids:
+                continue
+            if marker:
+                seen_ids.add(marker)
+            ordered_assets.append(asset)
+
+        items = []
+        for index, asset in enumerate(ordered_assets, 1):
+            source_urls = asset.get("source_urls") or []
+            items.append({
+                "index": index,
+                "asset_id": asset.get("id", ""),
+                "source_url": source_urls[-1] if source_urls else "",
+                "local_url": asset.get("local_url") or self.cover_store.local_url(asset),
+                "filename": asset.get("filename", ""),
+                "content_type": asset.get("content_type", ""),
+                "size": asset.get("size", 0),
+                "notion_file_upload_id": asset.get("notion_file_upload_id", ""),
+            })
+        return items
+
+    def get_material_source_context(self):
+        if not self.material_database_id:
+            raise NotionManagerError(
+                "缺少 NOTION_MATERIAL_DATABASE_ID，请先在 config.json 或环境变量中配置摄影素材库 ID。"
+            )
+        cached_context = getattr(self, "material_source_context", None)
+        if cached_context:
+            return cached_context
+
+        parent = {
+            "type": "database_id",
+            "database_id": self.material_database_id,
+        }
+        source_id = self.material_data_source_id
+        if not source_id:
+            database = self.request(
+                "GET",
+                f"https://api.notion.com/v1/databases/{self.material_database_id}",
+            )
+            data_sources = database.get("data_sources") or []
+            source_id = data_sources[0].get("id") if data_sources else ""
+        if source_id:
+            parent = {
+                "type": "data_source_id",
+                "data_source_id": source_id,
+            }
+            source = self.request(
+                "GET",
+                f"https://api.notion.com/v1/data_sources/{source_id}",
+            )
+            properties = source.get("properties") or {}
+            self.material_data_source_id = source_id
+        else:
+            database = self.request(
+                "GET",
+                f"https://api.notion.com/v1/databases/{self.material_database_id}",
+            )
+            properties = database.get("properties") or {}
+
+        title_property = MATERIAL_TITLE_PROP
+        if (properties.get(title_property) or {}).get("type") != "title":
+            title_property = next(
+                (
+                    name
+                    for name, prop in properties.items()
+                    if prop.get("type") == "title"
+                ),
+                "",
+            )
+        if not title_property:
+            raise NotionManagerError("摄影素材库缺少 title 类型属性。")
+
+        context = {
+            "parent": parent,
+            "properties": properties,
+            "title_property": title_property,
+        }
+        self.material_source_context = context
+        return context
+
+    def create_photo_materials(self, payload):
+        page_id = str(payload.get("page_id") or "").strip()
+        raw_items = payload.get("items") or []
+        if not page_id:
+            raise NotionManagerError("缺少来源笔记 ID。")
+        if not isinstance(raw_items, list) or not raw_items:
+            raise NotionManagerError("请选择至少一张图片。")
+        if len(raw_items) > 20:
+            raise NotionManagerError("单次最多保存 20 张素材图。")
+
+        source_page = self.get_page(page_id)
+        source_note = self.page_to_note(source_page)
+        context = self.get_material_source_context()
+        created = []
+        failures = []
+
+        for raw_item in raw_items:
+            try:
+                created.append(
+                    self._create_photo_material_page(
+                        context,
+                        source_note,
+                        raw_item,
+                    )
+                )
+            except Exception as exc:
+                failures.append({
+                    "index": raw_item.get("index", ""),
+                    "source_url": raw_item.get("source_url", ""),
+                    "error": str(exc),
+                })
+
+        return {
+            "ok": not failures,
+            "created": created,
+            "failed": len(failures),
+            "failures": failures,
+            "message": (
+                f"已保存 {len(created)} 张摄影素材"
+                + (f"，{len(failures)} 张失败。" if failures else "。")
+            ),
+        }
+
+    def _create_photo_material_page(self, context, source_note, raw_item):
+        properties = context["properties"]
+        source_url = str(raw_item.get("source_url") or "").strip()
+        asset_id = str(raw_item.get("asset_id") or "").strip()
+        image_index = int(raw_item.get("index") or 0)
+        if not source_url and asset_id:
+            asset = self.cover_store.get_asset(asset_id) or {}
+            source_urls = asset.get("source_urls") or []
+            source_url = source_urls[-1] if source_urls else ""
+        if not source_url:
+            raise NotionManagerError("图片缺少来源 URL。")
+
+        asset_response = self.cover_service.cache_cover(source_url, page_id=source_note.get("id", ""))
+        if not asset_id:
+            asset_id = asset_response.get("id") or ""
+
+        upload_to_notion = _as_bool(raw_item.get("upload_to_notion"), default=True)
+        file_upload_id = ""
+        if upload_to_notion and asset_id:
+            uploaded = self.cover_service.upload_cached_asset(asset_id)
+            file_upload_id = uploaded.get("notion_file_upload_id") or ""
+
+        title = (
+            str(raw_item.get("title") or "").strip()
+            or f"{source_note.get('title') or '摄影素材'} #{image_index or len(source_url)}"
+        )
+        page_properties = {
+            context["title_property"]: title_payload(title),
+        }
+
+        def prop_type(name):
+            return (properties.get(name) or {}).get("type")
+
+        def set_rich_text(name, value):
+            if prop_type(name) == "rich_text":
+                page_properties[name] = rich_text_payload(value)
+
+        def set_url(name, value):
+            if prop_type(name) == "url":
+                page_properties[name] = {"url": str(value or "").strip() or None}
+
+        def set_select(name, value):
+            value = str(value or "").strip()
+            if value and prop_type(name) == "select":
+                page_properties[name] = {"select": {"name": value}}
+
+        def set_multi_select(name, values):
+            if prop_type(name) != "multi_select":
+                return
+            tags = normalize_tags(values)
+            if tags:
+                page_properties[name] = {
+                    "multi_select": [{"name": tag} for tag in tags]
+                }
+
+        def set_select_or_multi_select(name, values):
+            if prop_type(name) == "multi_select":
+                set_multi_select(name, values)
+                return
+            tags = normalize_tags(values)
+            if tags:
+                set_select(name, tags[0])
+
+        set_url(MATERIAL_IMAGE_URL_PROP, source_url)
+        set_url(MATERIAL_SOURCE_URL_PROP, source_note.get("url"))
+        set_rich_text(MATERIAL_SOURCE_TITLE_PROP, source_note.get("title"))
+        set_rich_text(MATERIAL_AUTHOR_PROP, source_note.get("author"))
+        set_rich_text(MATERIAL_LEARNING_PROP, raw_item.get("learning_note", ""))
+        set_rich_text(MATERIAL_REMAKE_PROP, raw_item.get("remake_hint", ""))
+        set_multi_select(MATERIAL_COMPOSITION_PROP, raw_item.get("composition_tags", ""))
+        set_multi_select(MATERIAL_ACTION_PROP, raw_item.get("action_tags", ""))
+        set_multi_select(MATERIAL_LIGHT_PROP, raw_item.get("light_tags", ""))
+        set_multi_select(MATERIAL_COLOR_PROP, raw_item.get("color_tags", ""))
+        set_multi_select(MATERIAL_ANGLE_PROP, raw_item.get("angle_tags", ""))
+        set_multi_select(MATERIAL_MOOD_PROP, raw_item.get("mood_tags", ""))
+        set_multi_select(MATERIAL_CUSTOM_TAGS_PROP, raw_item.get("custom_tags", ""))
+        set_select_or_multi_select(MATERIAL_SCENE_PROP, raw_item.get("scene", ""))
+        set_select_or_multi_select(MATERIAL_SHOT_PROP, raw_item.get("shot_type", ""))
+        set_multi_select(MATERIAL_CLOTHING_PROP, raw_item.get("clothing_tags", ""))
+        set_multi_select(MATERIAL_WEATHER_PROP, raw_item.get("weather_tags", ""))
+        set_multi_select(MATERIAL_TIME_PROP, raw_item.get("time_tags", ""))
+        set_multi_select(MATERIAL_PEOPLE_PROP, raw_item.get("people_tags", ""))
+        set_multi_select(MATERIAL_FOCAL_LENGTH_PROP, raw_item.get("focal_length_tags", ""))
+        set_select(
+            MATERIAL_STATUS_PROP,
+            raw_item.get("status") if raw_item.get("status") in VALID_MATERIAL_STATUSES else "待分析",
+        )
+        if prop_type(MATERIAL_IMAGE_INDEX_PROP) == "number" and image_index:
+            page_properties[MATERIAL_IMAGE_INDEX_PROP] = {"number": image_index}
+        if prop_type(MATERIAL_RATING_PROP) == "number":
+            try:
+                rating = int(raw_item.get("rating") or 0)
+            except (TypeError, ValueError):
+                rating = 0
+            if rating:
+                page_properties[MATERIAL_RATING_PROP] = {"number": max(1, min(rating, 5))}
+        if prop_type(MATERIAL_REMAKE_READY_PROP) == "checkbox":
+            page_properties[MATERIAL_REMAKE_READY_PROP] = {
+                "checkbox": _as_bool(raw_item.get("remake_ready"), default=False)
+            }
+        if prop_type(MATERIAL_SOURCE_NOTE_PROP) == "relation" and source_note.get("id"):
+            page_properties[MATERIAL_SOURCE_NOTE_PROP] = {
+                "relation": [{"id": source_note["id"]}]
+            }
+        if prop_type(MATERIAL_IMAGE_PROP) == "files":
+            file_name = f"xhs-image-{image_index or 1}"
+            if file_upload_id:
+                page_properties[MATERIAL_IMAGE_PROP] = {
+                    "files": [
+                        {
+                            "name": file_name,
+                            "type": "file_upload",
+                            "file_upload": {"id": file_upload_id},
+                        }
+                    ]
+                }
+            else:
+                page_properties[MATERIAL_IMAGE_PROP] = {
+                    "files": [
+                        {
+                            "name": file_name,
+                            "type": "external",
+                            "external": {"url": source_url},
+                        }
+                    ]
+                }
+
+        cover = (
+            {"type": "file_upload", "file_upload": {"id": file_upload_id}}
+            if file_upload_id
+            else {"type": "external", "external": {"url": source_url}}
+        )
+        children = self._build_photo_material_children(source_note, raw_item, source_url)
+        page = self.request(
+            "POST",
+            "https://api.notion.com/v1/pages",
+            json={
+                "parent": context["parent"],
+                "properties": page_properties,
+                "cover": cover,
+                "children": children,
+            },
+        )
+        return {
+            "id": page.get("id", ""),
+            "url": page.get("url", ""),
+            "title": title,
+            "source_url": source_url,
+            "index": image_index,
+        }
+
+    def _build_photo_material_children(self, source_note, raw_item, source_url):
+        lines = [
+            ("来源笔记", source_note.get("title")),
+            ("作者", source_note.get("author")),
+            ("构图标签", raw_item.get("composition_tags")),
+            ("动作标签", raw_item.get("action_tags")),
+            ("场景", raw_item.get("scene")),
+            ("景别", raw_item.get("shot_type")),
+            ("服装类型", raw_item.get("clothing_tags")),
+            ("天气类型", raw_item.get("weather_tags")),
+            ("时间类型", raw_item.get("time_tags")),
+            ("人数类型", raw_item.get("people_tags")),
+            ("焦段类型", raw_item.get("focal_length_tags")),
+            ("机位角度", raw_item.get("angle_tags")),
+            ("光线标签", raw_item.get("light_tags")),
+            ("色彩标签", raw_item.get("color_tags")),
+            ("情绪氛围", raw_item.get("mood_tags")),
+            ("新增标签", raw_item.get("custom_tags")),
+            ("学习点", raw_item.get("learning_note")),
+            ("复刻提示", raw_item.get("remake_hint")),
+        ]
+        children = [
+            {
+                "object": "block",
+                "type": "image",
+                "image": {
+                    "type": "external",
+                    "external": {"url": source_url},
+                },
+            }
+        ]
+        for label, value in lines:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            children.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {"content": f"{label}: {text[:1800]}"},
+                        }
+                    ]
+                },
+            })
+        return children
 
     def debug_first_page_cover(self, limit=3):
         """Diagnostic helper: dump the raw cover field for the first N pages.

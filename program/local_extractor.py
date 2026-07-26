@@ -54,6 +54,7 @@ class XiaohongshuExtractor:
             'content': '',
             'note_url': '',
             'cover_url': '',
+            'image_urls': [],
             'success': False
         }
         
@@ -149,13 +150,27 @@ class XiaohongshuExtractor:
                 # 提取封面图（兼容视频和实况图）
                 # 小红书无论是视频还是图文，都会在 imageList 中提供静态的封面首图
                 if 'imageList' in note_data and note_data['imageList']:
-                    img = note_data['imageList'][0]
-                    # 优先使用 urlDefault 或 url
-                    result['cover_url'] = img.get('urlDefault') or img.get('url') or img.get('urlPre')
+                    image_urls = []
+                    for img in note_data['imageList']:
+                        if not isinstance(img, dict):
+                            continue
+                        image_url = (
+                            img.get('urlDefault')
+                            or img.get('url')
+                            or img.get('urlPre')
+                            or img.get('urlOrigin')
+                        )
+                        if image_url and image_url not in image_urls:
+                            image_urls.append(image_url)
+                    result['image_urls'] = image_urls
+                    if image_urls:
+                        result['cover_url'] = image_urls[0]
                 # 兜底：如果是纯视频且未提取到图片列表，尝试从视频信息里提取封面
                 elif 'video' in note_data and note_data['video'] and 'image' in note_data['video']:
                     video_cover = note_data['video']['image']
-                    result['cover_url'] = video_cover.get('thumbnail') or video_cover.get('url') or video_cover.get('urlDefault')
+                    cover_url = video_cover.get('thumbnail') or video_cover.get('url') or video_cover.get('urlDefault')
+                    result['cover_url'] = cover_url
+                    result['image_urls'] = [cover_url] if cover_url else []
                 
                 print(f"从INITIAL_STATE提取成功: 标题={result.get('title', '')}, 作者={result.get('author', '')}, 标签数={len(result.get('tags', []))}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
         

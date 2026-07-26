@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>小红书收藏中心 UI Mockup</title>
+    <style>
+      :root {
+        --page: #ffffff;
+        --canvas: #f7f6f2;
+        --ink: #2f2e2a;
+        --muted: #75716a;
+        --faint: #a8a29a;
+        --line: #e2ddd3;
+        --line-strong: #cbc4b8;
+        --red: #bd4b62;
+        --red-bg: #fbebef;
+        --blue: #386aa6;
+        --blue-bg: #eaf1fa;
+        --green: #29785f;
+        --green-bg: #e7f4ee;
+        --orange: #9b5b22;
+        --orange-bg: #faeedf;
+        --purple: #6a54a3;
+        --purple-bg: #efedfa;
+        --yellow: #8a6a14;
+        --yellow-bg: #f8f1ce;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(90deg, rgba(0, 0, 0, 0.035) 0, transparent 1px) 0 0 / 64px 64px,
+          linear-gradient(rgba(0, 0, 0, 0.025) 0, transparent 1px) 0 0 / 64px 64px,
+          var(--canvas);
+        color: var(--ink);
+        font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      }
+
+      .frame {
+        width: 1440px;
+        min-height: 1320px;
+        margin: 0 auto;
+        padding: 36px 48px 60px;
+      }
+
+      .notion-page {
+        width: 1120px;
+        margin: 0 auto;
+        padding: 28px 76px 60px;
+        background: var(--page);
+        border: 1px solid #ebe7df;
+        box-shadow: 0 28px 70px rgba(46, 39, 28, 0.14);
+      }
+
+      .crumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .icon {
+        width: 76px;
+        height: 76px;
+        margin-top: 22px;
+        border-radius: 18px;
+        display: grid;
+        place-items: center;
+        background: #f3f0ea;
+        font-size: 43px;
+      }
+
+      h1 {
+        margin: 18px 0 10px;
+        font-size: 44px;
+        line-height: 1.15;
+        letter-spacing: 0;
+      }
+
+      .subline {
+        width: 760px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+
+      .callouts {
+        display: grid;
+        grid-template-columns: 1.12fr 0.88fr;
+        gap: 14px;
+        margin-top: 24px;
+      }
+
+      .callout {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        min-height: 92px;
+        padding: 16px 18px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+      }
+
+      .callout strong {
+        display: block;
+        font-size: 17px;
+        margin-bottom: 4px;
+      }
+
+      .callout p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .callout .mark {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.75);
+        font-size: 18px;
+      }
+
+      .callout.launcher {
+        background: var(--red-bg);
+        border-color: #f0c6cf;
+      }
+
+      .callout.launcher strong {
+        color: var(--red);
+      }
+
+      .callout.info {
+        background: var(--blue-bg);
+        border-color: #cbdcee;
+      }
+
+      .button-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .button {
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 0 12px;
+        border-radius: 6px;
+        border: 1px solid rgba(189, 75, 98, 0.24);
+        background: #fff;
+        color: var(--red);
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .ghost {
+        color: var(--muted);
+        border-color: var(--line);
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 34px 0 14px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .section-title h2 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.2;
+      }
+
+      .section-title small {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+
+      .stat {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfaf7;
+      }
+
+      .stat .label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .stat .value {
+        margin-top: 9px;
+        font-size: 28px;
+        line-height: 1;
+        font-weight: 760;
+      }
+
+      .stat .hint {
+        margin-top: 8px;
+        color: var(--faint);
+        font-size: 11px;
+      }
+
+      .views {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .view-tab {
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px;
+        border-radius: 6px;
+      }
+
+      .view-tab.active {
+        color: var(--ink);
+        background: #f0eee8;
+        font-weight: 650;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: 1fr auto auto auto;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .search, .select {
+        height: 34px;
+        display: flex;
+        align-items: center;
+        padding: 0 11px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        background: #fff;
+      }
+
+      .select {
+        min-width: 116px;
+      }
+
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+
+      .note-card {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .cover {
+        height: 108px;
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 46%),
+          linear-gradient(150deg, #d8e8f5, #f5d7df 48%, #f5e6b2);
+      }
+
+      .cover.tech {
+        background: linear-gradient(145deg, #d9e5f7, #d7f0e4 45%, #f4e1bb);
+      }
+
+      .cover.life {
+        background: linear-gradient(145deg, #f7dfcd, #f5efc7 44%, #d8edf1);
+      }
+
+      .cover.photo {
+        background: linear-gradient(145deg, #efe5fb, #cfe4f8 47%, #f8d9ca);
+      }
+
+      .note-body {
+        padding: 10px;
+      }
+
+      .note-title {
+        min-height: 40px;
+        font-size: 13px;
+        font-weight: 680;
+        line-height: 1.45;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 8px;
+      }
+
+      .chip {
+        max-width: 100%;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        color: var(--muted);
+        background: #f0eee8;
+      }
+
+      .chip.red { color: var(--red); background: var(--red-bg); }
+      .chip.blue { color: var(--blue); background: var(--blue-bg); }
+      .chip.green { color: var(--green); background: var(--green-bg); }
+      .chip.orange { color: var(--orange); background: var(--orange-bg); }
+      .chip.purple { color: var(--purple); background: var(--purple-bg); }
+      .chip.yellow { color: var(--yellow); background: var(--yellow-bg); }
+
+      .domain-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .domain {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        overflow: hidden;
+      }
+
+      .domain-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        background: #fbfaf7;
+      }
+
+      .domain-head strong {
+        font-size: 15px;
+      }
+
+      .domain-head span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .album-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .album {
+        min-height: 78px;
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #fff;
+      }
+
+      .album strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+      }
+
+      .album .meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 9px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .tiny-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+      }
+
+      .tiny {
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: #f0eee8;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .side-note {
+        margin-top: 18px;
+        padding: 12px 14px;
+        border-left: 3px solid var(--purple);
+        background: var(--purple-bg);
+        color: #50476e;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .footer-map {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .mini {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfaf7;
+      }
+
+      .mini strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .mini p {
+        margin: 5px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <main class="notion-page">
+        <div class="crumb">小红书转 Notion 模板安装包 / <strong>小红书收藏中心</strong></div>
+        <div class="icon">📥</div>
+        <h1>小红书收藏中心</h1>
+        <p class="subline">
+          日常收藏从自动化进入内容总库，精细搜索和批量整理交给本地管理台；Notion 页面负责浏览、回顾、沉淀和按六大主题进入专辑。
+        </p>
+
+        <section class="callouts">
+          <div class="callout launcher">
+            <div class="mark">↗</div>
+            <div>
+              <strong>进入收藏管理台</strong>
+              <p>搜索、筛选、批量追加专辑、维护 AI 专辑语义说明；本地服务保管 Notion token。</p>
+              <div class="button-row">
+                <span class="button">打开 http://127.0.0.1:8765</span>
+                <span class="button ghost">启动页 / HTTPS 嵌入</span>
+              </div>
+            </div>
+          </div>
+          <div class="callout info">
+            <div class="mark">i</div>
+            <div>
+              <strong>页面角色</strong>
+              <p>Notion 原生负责展示和筛选视图；复杂动作由管理台完成，避免在前端暴露凭据。</p>
+            </div>
+          </div>
+        </section>
+
+        <div class="section-title">
+          <h2>状态统计</h2>
+          <small>建议用「内容总库」的 Chart / Number / Table 视图实现</small>
+        </div>
+        <section class="stats">
+          <div class="stat">
+            <div class="label">待阅读</div>
+            <div class="value">18</div>
+            <div class="hint">状态 = 待阅读</div>
+          </div>
+          <div class="stat">
+            <div class="label">待路由</div>
+            <div class="value">6</div>
+            <div class="hint">需要重新分类</div>
+          </div>
+          <div class="stat">
+            <div class="label">近 7 天新增</div>
+            <div class="value">27</div>
+            <div class="hint">按创建时间过滤</div>
+          </div>
+          <div class="stat">
+            <div class="label">已实践</div>
+            <div class="value">9</div>
+            <div class="hint">可用于周回顾</div>
+          </div>
+        </section>
+
+        <div class="section-title">
+          <h2>我的收藏</h2>
+          <small>主视图保留 Gallery，辅助视图使用 Table / Board</small>
+        </div>
+        <div class="views">
+          <span class="view-tab active">▦ 最近收藏</span>
+          <span class="view-tab">☰ 待处理清单</span>
+          <span class="view-tab">▤ 按状态</span>
+          <span class="view-tab">▣ 封面巡检</span>
+        </div>
+        <div class="toolbar">
+          <div class="search">⌕ 搜索标题、作者、野生标签</div>
+          <div class="select">状态：全部</div>
+          <div class="select">专辑：全部</div>
+          <div class="select">排序：最近创建</div>
+        </div>
+        <section class="gallery">
+          <article class="note-card">
+            <div class="cover photo"></div>
+            <div class="note-body">
+              <div class="note-title">日系人像构图：阴天也能拍出颜色</div>
+              <div class="chips">
+                <span class="chip blue">积累拍照灵感</span>
+                <span class="chip purple">日系</span>
+                <span class="chip">待阅读</span>
+              </div>
+            </div>
+          </article>
+          <article class="note-card">
+            <div class="cover tech"></div>
+            <div class="note-body">
+              <div class="note-title">Codex + Notion 自动化批处理思路</div>
+              <div class="chips">
+                <span class="chip orange">学习AI编程</span>
+                <span class="chip green">AI</span>
+                <span class="chip">长期参考</span>
+              </div>
+            </div>
+          </article>
+          <article class="note-card">
+            <div class="cover life"></div>
+            <div class="note-body">
+              <div class="note-title">空气炸锅一周菜单与厨房收纳</div>
+              <div class="chips">
+                <span class="chip red">学习做饭</span>
+                <span class="chip yellow">菜谱</span>
+                <span class="chip">已整理</span>
+              </div>
+            </div>
+          </article>
+          <article class="note-card">
+            <div class="cover"></div>
+            <div class="note-body">
+              <div class="note-title">重庆轻轨拍照点位和机位清单</div>
+              <div class="chips">
+                <span class="chip yellow">地点收集-重庆</span>
+                <span class="chip blue">机位</span>
+                <span class="chip">待路由</span>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <div class="section-title">
+          <h2>六大主题专辑</h2>
+          <small>保持折叠，展开后是链接到「库B：专辑标签库」的 Gallery 视图</small>
+        </div>
+        <section class="domain-grid">
+          <div class="domain">
+            <div class="domain-head">
+              <strong>🛠️ 硬核技术与职业效能</strong>
+              <span>13 个专辑</span>
+            </div>
+            <div class="album-list">
+              <div class="album">
+                <strong>💻学习AI编程</strong>
+                <div class="tiny-tags"><span class="tiny">编程</span><span class="tiny">LLM</span></div>
+                <div class="meta"><span>42 笔记</span><span>5 待处理</span></div>
+              </div>
+              <div class="album">
+                <strong>💻学习嵌入式知识</strong>
+                <div class="tiny-tags"><span class="tiny">嵌入式</span><span class="tiny">硬件</span></div>
+                <div class="meta"><span>19 笔记</span><span>2 待处理</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="domain">
+            <div class="domain-head">
+              <strong>📸 视觉叙事与影像实验室</strong>
+              <span>18 个专辑</span>
+            </div>
+            <div class="album-list">
+              <div class="album">
+                <strong>积累拍照灵感</strong>
+                <div class="tiny-tags"><span class="tiny">摄影</span><span class="tiny">灵感</span></div>
+                <div class="meta"><span>58 笔记</span><span>8 待处理</span></div>
+              </div>
+              <div class="album">
+                <strong>学习调色</strong>
+                <div class="tiny-tags"><span class="tiny">调色</span><span class="tiny">后期</span></div>
+                <div class="meta"><span>24 笔记</span><span>1 待处理</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="domain">
+            <div class="domain-head">
+              <strong>🦾 生活百科与生存技能</strong>
+              <span>8 个专辑</span>
+            </div>
+            <div class="album-list">
+              <div class="album">
+                <strong>学习做饭</strong>
+                <div class="tiny-tags"><span class="tiny">菜谱</span><span class="tiny">厨房</span></div>
+                <div class="meta"><span>31 笔记</span><span>3 待处理</span></div>
+              </div>
+              <div class="album">
+                <strong>积累装修灵感</strong>
+                <div class="tiny-tags"><span class="tiny">家装</span><span class="tiny">收纳</span></div>
+                <div class="meta"><span>16 笔记</span><span>0 待处理</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="domain">
+            <div class="domain-head">
+              <strong>🌿 身心重塑与自我管理</strong>
+              <span>9 个专辑</span>
+            </div>
+            <div class="album-list">
+              <div class="album">
+                <strong>体态修复学习</strong>
+                <div class="tiny-tags"><span class="tiny">矫正</span><span class="tiny">训练</span></div>
+                <div class="meta"><span>15 笔记</span><span>4 待处理</span></div>
+              </div>
+              <div class="album">
+                <strong>学习说话</strong>
+                <div class="tiny-tags"><span class="tiny">表达</span><span class="tiny">沟通</span></div>
+                <div class="meta"><span>11 笔记</span><span>1 待处理</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="domain">
+            <div class="domain-head">
+              <strong>📍 地理图志与探店计划</strong>
+              <span>7 个专辑</span>
+            </div>
+            <div class="album-list">
+              <div class="album">
+                <strong>地点收集-重庆</strong>
+                <div class="tiny-tags"><span class="tiny">重庆</span><span class="tiny">机位</span></div>
+                <div class="meta"><span>29 笔记</span><span>2 待处理</span></div>
+              </div>
+              <div class="album">
+                <strong>旅游计划-霓虹</strong>
+                <div class="tiny-tags"><span class="tiny">日本</span><span class="tiny">行程</span></div>
+                <div class="meta"><span>18 笔记</span><span>6 待处理</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="domain">
+            <div class="domain-head">
+              <strong>🎭 奇趣碎片与小众文化</strong>
+              <span>6 个专辑</span>
+            </div>
+            <div class="album-list">
+              <div class="album">
+                <strong>WindowsXP</strong>
+                <div class="tiny-tags"><span class="tiny">收藏</span><span class="tiny">复古</span></div>
+                <div class="meta"><span>12 笔记</span><span>0 待处理</span></div>
+              </div>
+              <div class="album">
+                <strong>积累Bgm</strong>
+                <div class="tiny-tags"><span class="tiny">音乐</span><span class="tiny">素材</span></div>
+                <div class="meta"><span>21 笔记</span><span>4 待处理</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="side-note">
+          推荐把现在页面底部的纯文本统计块，改成上方「状态统计」的数据库视图；六大主题区保留折叠，默认不抢首屏。真实交互仍由本地管理台完成，Notion 页面专注于浏览和回顾。
+        </div>
+
+        <section class="footer-map">
+          <div class="mini">
+            <strong>数据库 A：内容总库</strong>
+            <p>Gallery / Table / Board 多视图，字段沿用标题、状态、作者、标签、封面、Relation。</p>
+          </div>
+          <div class="mini">
+            <strong>数据库 B：专辑标签库</strong>
+            <p>六大主领域 Gallery 视图，展示总量、待处理、最后更新和细分标签。</p>
+          </div>
+          <div class="mini">
+            <strong>本地管理台</strong>
+            <p>搜索、批量追加、状态修改、封面修复和 AI 语义说明维护。</p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

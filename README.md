@@ -96,6 +96,8 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 | `NOTION_API_KEY` | 是 | Notion integration token |
 | `NOTION_DATABASE_ID` | 是 | Notion 内容总库 database id |
 | `NOTION_DATA_SOURCE_ID` | 否 | Notion 新版 data source id；留空时管理台会自动从 database 解析 |
+| `NOTION_MATERIAL_DATABASE_ID` | 否 | 摄影拆图素材库 database id；仅使用“拆图”保存素材时需要 |
+| `NOTION_MATERIAL_DATA_SOURCE_ID` | 否 | 摄影素材库新版 data source id；留空时后端会自动从 database 解析 |
 | `NOTION_VERSION` | 否 | Notion API 版本，模板默认 `2025-09-03` |
 | `NOTION_TIMEOUT` | 否 | Notion API 请求超时秒数，模板默认 `15` |
 | `NOTION_VERIFY_SSL` | 否 | 是否校验 SSL 证书，模板默认 `false` 以兼容本地网络问题 |
@@ -106,6 +108,8 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 | `COVER_CACHE_ENABLED` | 否 | 是否启用封面本地缓存，默认 `true` |
 | `COVER_UPLOAD_TO_NOTION` | 否 | 是否把缓存封面上传到 Notion 并设置为页面封面，默认 `true` |
 | `COVER_CACHE_DIR` | 否 | 自定义封面缓存目录；留空时使用 `program/data/covers` |
+| `XHS_FETCH_MIN_INTERVAL_SECONDS` | 否 | 拆图回源请求小红书原文页面的最小间隔，默认 `3` |
+| `XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS` | 否 | 拆图下载小红书图片的最小间隔，默认 `1` |
 
 `program/config.json` 是本地私密配置，不应提交到 Git。仓库中只保留 `program/config_template.json`。
 
@@ -127,6 +131,16 @@ Content-Type: application/json
 ```
 
 成功响应会返回 `asset`，其中包含 `id`、`filename`、`local_url`、`content_type`、`size`、`sha256`、`notion_file_upload_id` 等字段。本地封面可通过管理台的 `/covers/{filename}` 静态路径访问。
+
+## 摄影拆图素材库
+
+管理台支持在每张笔记卡片上点击“拆图”，查看该小红书笔记中的全部图片。用户手动勾选图片后，可填写构图标签、动作标签、场景、景别、机位角度、主体类型、光线标签、色彩标签、情绪氛围、学习点、复刻提示、状态、评分和是否适合复刻，并保存到独立的 Notion 摄影素材库。该流程不做 AI 分析。
+
+素材库通过 `NOTION_MATERIAL_DATABASE_ID` 配置。建议字段包括：`标题`、`图片`、`图片链接`、`来源笔记`、`原文链接`、`来源标题`、`作者`、`构图标签`、`动作标签`、`光线标签`、`色彩标签`、`场景`、`景别`、`机位角度`、`主体类型`、`情绪氛围`、`学习点`、`复刻提示`、`状态`、`来源图片序号`、`适合复刻`、`评分`。后端只写入素材库中实际存在且类型匹配的字段。
+
+推荐在 Notion 里把素材库配置为 Gallery 视图，并建立 `按色彩找图`、`按动作找图`、`按构图找图` 和 `可复刻清单` 等常用视图。
+
+拆图优先读取本地缓存；旧笔记首次拆图或手动“重新提取图片”时才会请求小红书原文页面。后端默认对小红书页面请求和图片下载做轻量限速，可通过 `XHS_FETCH_MIN_INTERVAL_SECONDS` 与 `XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS` 调整。
 
 ## 使用方法
 
@@ -199,7 +213,7 @@ python program/manage_server.py
 http://127.0.0.1:8765
 ```
 
-管理台支持搜索标题、简介、作者、野生标签，文本搜索属性可用 `+` 分隔多个必须同时满足的关键词；也可按状态和专辑过滤，下滑自动加载更多结果，多选结果后执行批量整理，在真实 Notion 专辑库中创建或重命名专辑，并在左侧可收起工作区中维护 `album_descriptions.json`。专辑说明按 Notion「主领域」的六大主题分类定位；追加专辑会保留原有专辑 Relation，不会覆盖原分类；右键卡片封面可将笔记移入 Notion 回收站。
+管理台支持搜索标题、简介、作者、野生标签，综合搜索、标题、作者和标签使用 Token Field 录入多个必须同时满足的关键词；也可上传本地图片作为背景，前端会自动缩放压缩后保存到当前浏览器。管理台还支持按状态和专辑过滤，下滑自动加载更多结果，多选结果后执行批量整理，在真实 Notion 专辑库中创建或重命名专辑，并在左侧可收起工作区中维护 `album_descriptions.json`。专辑说明按 Notion「主领域」的六大主题分类定位；追加专辑会保留原有专辑 Relation，不会覆盖原分类；右键卡片封面可将笔记移入 Notion 回收站。
 
 如需放入 Notion 页面，可在 Notion 中创建页面后使用 `/embed` 嵌入上述地址。若 Notion 客户端无法嵌入本地地址，先直接用浏览器打开管理台。
 
@@ -207,14 +221,16 @@ http://127.0.0.1:8765
 
 如果 Notion 无法直接嵌入 `http://127.0.0.1:8765`，可以使用“启动页 + 本机协议”的组合，在 Notion 中只保留一个启动按钮：
 
-1. 首次在本机注册启动协议：
+1. 首次在本机安装管理台入口：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
 ```
 
+安装脚本会注册 `xhs-notion-console://`、立即启动管理台，并为当前 Windows 用户设置登录后后台自动启动。这样收藏中心中直接指向 `http://127.0.0.1:8765` 的“进入收藏管理台”按钮无需预先手动运行服务。
+
 2. 将 `program/web/notion_launcher.html` 上传或嵌入到 Notion。这个 HTML 不包含 Notion token，只提供一个轻量管理台入口。
-3. 在 Notion 启动页点击“启动小红书收藏管理”，会通过 `xhs-notion-console://start?mode=local` 启动本地服务，并自动打开 `http://127.0.0.1:8765`。
+3. 在 Notion 启动页点击“启动小红书收藏管理”，会通过 `xhs-notion-console://start?mode=local` 启动本地服务，并自动打开 `http://127.0.0.1:8765`。若 Notion 客户端拦截自定义协议，直接使用收藏中心中指向本地地址的普通链接即可。
 4. 如果需要在 Notion 内嵌完整管理台，可手动使用脚本的 Cloudflare Quick Tunnel 模式：
 
 ```powershell
@@ -229,7 +245,7 @@ powershell -ExecutionPolicy Bypass -File program/start_management_console.ps1 -M
 
 注意：Cloudflare Quick Tunnel 地址是临时的，重启后可能变化。长期固定入口建议配置 Cloudflare Named Tunnel 或云端部署，并增加访问认证。
 
-已知限制：Notion 上传的 HTML 会运行在沙箱 iframe 中，部分 Notion 客户端或浏览器可能会拦截 `xhs-notion-console://` 外部协议和弹窗。如果按钮没有反应，本地协议和服务仍可正常使用，可靠兜底是直接打开 `http://127.0.0.1:8765`，或把 `xhs-notion-console://start?mode=local` 做成浏览器书签/桌面快捷方式。
+已知限制：Notion 上传的 HTML 会运行在沙箱 iframe 中，部分 Notion 客户端或浏览器可能会拦截 `xhs-notion-console://` 外部协议和弹窗。默认安装会让管理台随 Windows 登录后台启动，因此优先让 Notion 按钮直接打开 `http://127.0.0.1:8765`；自定义协议、浏览器书签或桌面快捷方式作为手动兜底。
 
 ## QQ 卡片与 Skill 使用注意
 
@@ -251,7 +267,7 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 - `program/album_descriptions.json`：专辑语义描述，用于提升 DeepSeek 专辑推理准确度。
 - `program/manage_server.py`：本地收藏管理台入口，默认只监听 `127.0.0.1`。
 - `program/start_management_console.ps1`：一键启动本地管理台，可选启动 Cloudflare HTTPS 临时隧道。
-- `program/install_console_protocol.ps1`：注册 `xhs-notion-console://` 协议，供 Notion 启动页唤起本地脚本。
+- `program/install_console_protocol.ps1`：注册 `xhs-notion-console://` 协议并安装当前用户登录自启动，供 Notion 入口稳定打开本地管理台。
 - `program/notion_manager.py`：收藏管理台后端逻辑，负责查询、过滤、批量追加专辑和移入回收站。
 
 ## 维护说明
