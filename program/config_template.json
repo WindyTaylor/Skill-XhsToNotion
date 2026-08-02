@@ -13,6 +13,8 @@
   "COVER_CACHE_DIR": "",
   "XHS_FETCH_MIN_INTERVAL_SECONDS": 3,
   "XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS": 1,
+  "ADMIN_USERNAME": "admin",
+  "ADMIN_PASSWORD": "",
   "DEEPSEEK_API_KEY": "sk_your_deepseek_api_key_here_optional",
   "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
   "DEEPSEEK_MODEL": "deepseek-chat"

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer-when-downgrade" />
+    <meta name="theme-color" content="#534ab7" />
+    <title>图片管理 - 小红书收藏管理台</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=20260802-material-preview-card" />
+  </head>
+  <body class="materials-page">
+    <div id="backgroundLayer" class="background-layer" aria-hidden="true"></div>
+    <main class="app-shell materials-shell">
+      <div class="control-dock materials-dock">
+        <header class="brand-row">
+          <div>
+            <h1>图片管理</h1>
+            <p id="materialsMeta" class="muted">正在读取摄影素材库...</p>
+          </div>
+          <div class="header-actions" aria-label="页面操作">
+            <button id="openMainButton" class="utility-button" type="button">返回主页面</button>
+            <button id="refreshMaterialsButton" class="icon-button" type="button" title="刷新">⟳</button>
+          </div>
+        </header>
+
+        <section class="search-bar materials-search" aria-label="图片素材搜索">
+          <label class="search-pill">
+            <span class="sr-only">搜索图片素材</span>
+            <input
+              id="materialsSearchInput"
+              type="search"
+              placeholder="搜索标题、来源、作者、标签、学习点"
+              autocomplete="off"
+            />
+            <button id="materialsSearchButton" class="pill-btn" type="button">搜索</button>
+          </label>
+        </section>
+
+        <section class="filter-chips" aria-label="图片素材筛选">
+          <span class="chip">
+            <span class="chip-label">状态</span>
+            <select id="materialsStatusSelect">
+              <option value="">全部</option>
+              <option value="待分析">待分析</option>
+              <option value="已拆解">已拆解</option>
+              <option value="已复刻">已复刻</option>
+              <option value="已内化">已内化</option>
+            </select>
+          </span>
+          <span class="chip">
+            <span class="chip-label">标签</span>
+            <select id="materialsTagSelect">
+              <option value="">全部</option>
+            </select>
+          </span>
+          <span id="materialsMessage" class="message materials-inline-message" aria-live="polite"></span>
+        </section>
+      </div>
+
+      <section class="materials-stats" aria-label="图片素材概览">
+        <article>
+          <span>当前结果</span>
+          <strong id="materialsVisibleCount">0</strong>
+        </article>
+        <article>
+          <span>可筛选标签</span>
+          <strong id="materialsTagCount">0</strong>
+        </article>
+        <article>
+          <span>下一页</span>
+          <strong id="materialsMoreState">无</strong>
+        </article>
+      </section>
+
+      <section id="materialsGrid" class="materials-grid" aria-label="图片素材列表"></section>
+      <div id="materialsEmpty" class="empty-state">还没有匹配的图片素材。</div>
+      <div class="load-more-wrap">
+        <button id="loadMoreMaterialsButton" class="secondary-button" type="button">加载更多</button>
+      </div>
+    </main>
+
+    <div
+      id="materialPreviewOverlay"
+      class="image-preview-overlay"
+      aria-hidden="true"
+    >
+      <button id="materialPreviewClose" class="image-preview-close" type="button" aria-label="关闭预览">×</button>
+      <img id="materialPreviewImg" class="image-preview-img" alt="" />
+    </div>
+
+    <script src="/materials.js?v=20260802-material-preview-card"></script>
+  </body>
+</html>

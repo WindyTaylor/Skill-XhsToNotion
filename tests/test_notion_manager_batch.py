@@ -11,6 +11,7 @@ from notion_manager import (  # noqa: E402
     ALBUM_PROP,
     AUTHOR_PROP,
     COLOR_TAGS_PROP,
+    COVER_URL_PROP,
     STATUS_PROP,
     SUMMARY_PROP,
     TAGS_PROP,
@@ -69,21 +70,63 @@ class FakeCoverStore:
     def get_local_url_for_page(self, page_id):
         return ""
 
+    def get_asset_for_page(self, page_id):
+        return None
+
+
+class FakeCoverService:
+    def __init__(self):
+        self.cache_upload_calls = []
+        self.upload_cached_calls = []
+
+    def cache_upload_and_attach(
+        self,
+        source_url,
+        page_id,
+        force_cache=False,
+        force_upload=False,
+    ):
+        self.cache_upload_calls.append(
+            {
+                "source_url": source_url,
+                "page_id": page_id,
+                "force_cache": force_cache,
+                "force_upload": force_upload,
+            }
+        )
+        return {"id": "asset-1", "source_urls": [source_url]}
+
+    def upload_cached_asset(self, asset_id, page_id="", force_upload=False):
+        self.upload_cached_calls.append(
+            {
+                "asset_id": asset_id,
+                "page_id": page_id,
+                "force_upload": force_upload,
+            }
+        )
+        return {"id": asset_id}
+
 
 class BatchManagerTests(unittest.TestCase):
     def make_manager(self, pages):
         manager = NotionNoteManager.__new__(NotionNoteManager)
+        manager._temp_dir = tempfile.TemporaryDirectory()
         manager.album_map = {"专辑 A": "album-a", "专辑 B": "album-b"}
         manager.album_domains_file = PROGRAM_DIR / "album_domains.json"
+        manager.album_order_file = Path(manager._temp_dir.name) / "album_order.json"
         manager.album_id_to_name = {
             "album-a": "专辑 A",
             "album-b": "专辑 B",
         }
         manager.cover_store = FakeCoverStore()
+        manager.cover_service = FakeCoverService()
+        manager.xhs_fetch_min_interval = 0
+        manager.xhs_image_download_interval = 0
         manager.get_page = lambda page_id: pages[page_id]
         manager.property_patches = []
         manager.page_patches = []
         manager.archived_ids = []
+        manager.wait_for_xhs_request = lambda min_interval: None
 
         def patch_page_properties(page_id, properties):
             manager.property_patches.append((page_id, properties))
@@ -202,6 +245,42 @@ class BatchManagerTests(unittest.TestCase):
         self.assertEqual(result["updated"], 1)
         patch = manager.property_patches[0][1]
         self.assertEqual(patch[ALBUM_PROP]["relation"], [{"id": "album-b"}])
+
+    def test_repair_cover_extracts_source_from_note_url_when_cover_is_missing(self):
+        pages = {
+            "page-1": make_page("page-1"),
+        }
+        manager = self.make_manager(pages)
+        manager.extract_cover_source_from_note_url = (
+            lambda note_url: "https://sns-img-qc.xhscdn.com/cover.jpg"
+        )
+
+        result = manager.repair_page_covers(["page-1"])
+
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(
+            manager.cover_service.cache_upload_calls,
+            [
+                {
+                    "source_url": "https://sns-img-qc.xhscdn.com/cover.jpg",
+                    "page_id": "page-1",
+                    "force_cache": True,
+                    "force_upload": True,
+                }
+            ],
+        )
+        self.assertEqual(
+            manager.property_patches[-1],
+            (
+                "page-1",
+                {
+                    COVER_URL_PROP: {
+                        "url": "https://sns-img-qc.xhscdn.com/cover.jpg"
+                    }
+                },
+            ),
+        )
 
     def test_clean_tags_updates_wild_and_color_tags(self):
         pages = {
@@ -331,6 +410,7 @@ class BatchManagerTests(unittest.TestCase):
             manager.album_map_file = temp_path / "album_map.json"
             manager.album_domains_file = temp_path / "album_domains.json"
             manager.album_descriptions_file = temp_path / "album_descriptions.json"
+            manager.album_order_file = temp_path / "album_order.json"
             manager.album_domains_file.write_text(
                 '{"专辑 A": "🛠️ 硬核技术与职业效能"}',
                 encoding="utf-8",

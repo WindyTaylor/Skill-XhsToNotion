@@ -142,6 +142,7 @@ simple_results/
 push_stdout.txt
 push_stderr.txt
 *.log
+*.pid
 
 # Workspace memory (project-local, not for git)
 .workbuddy/

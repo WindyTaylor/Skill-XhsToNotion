@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>图片管理筛选设计稿 v2</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #24231f;
+        --bg-soft: #2b2924;
+        --panel: #312e28;
+        --panel-soft: #38342d;
+        --panel-strong: #1f1d19;
+        --ink: #f6f4ef;
+        --muted: #c2bdb3;
+        --quiet: #918b80;
+        --line: rgba(221, 215, 203, 0.2);
+        --line-strong: rgba(221, 215, 203, 0.36);
+        --accent: #afa9ec;
+        --accent-deep: #534ab7;
+        --accent-soft: rgba(238, 237, 254, 0.12);
+        --rose: #d85d73;
+        --amber: #f0b458;
+        --green: #79c4a0;
+        --tag: rgba(241, 239, 232, 0.1);
+        --shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 18% -4%, rgba(175, 169, 236, 0.18), transparent 28%),
+          radial-gradient(circle at 92% 0%, rgba(216, 93, 115, 0.12), transparent 24%),
+          linear-gradient(180deg, #2b2924 0%, #24231f 48%, #1f1d19 100%);
+        color: var(--ink);
+        font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .board {
+        width: 1440px;
+        min-height: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 284px minmax(0, 1fr) 332px;
+        gap: 14px;
+        min-height: 960px;
+      }
+
+      .panel {
+        border: 0.5px solid var(--line);
+        border-radius: 8px;
+        background: rgba(49, 46, 40, 0.88);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px) saturate(1.08);
+      }
+
+      .left {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 14px;
+        padding: 16px;
+      }
+
+      .main {
+        display: grid;
+        grid-template-rows: auto auto auto 1fr;
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .right {
+        display: grid;
+        grid-template-rows: auto auto auto 1fr auto;
+        gap: 14px;
+        padding: 16px;
+      }
+
+      .brand,
+      .toolbar,
+      .row,
+      .split,
+      .card-foot,
+      .detail-head,
+      .meta-line,
+      .view-tabs,
+      .actions {
+        display: flex;
+        align-items: center;
+      }
+
+      .brand {
+        gap: 10px;
+      }
+
+      .logo {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border: 0.5px solid rgba(175, 169, 236, 0.48);
+        border-radius: 8px;
+        background:
+          linear-gradient(135deg, rgba(83, 74, 183, 0.92), rgba(216, 93, 115, 0.44)),
+          #24231f;
+        color: #fff;
+      }
+
+      .icon {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 18px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        font-size: 26px;
+        line-height: 1.12;
+      }
+
+      h3 {
+        font-size: 13px;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .quiet {
+        color: var(--quiet);
+        font-size: 11px;
+      }
+
+      .nav {
+        display: grid;
+        gap: 7px;
+      }
+
+      .nav button,
+      .button,
+      .icon-button,
+      .chip,
+      .tab,
+      .search,
+      .metric,
+      .field,
+      .saved-view,
+      .property,
+      .note-box {
+        border: 0.5px solid var(--line);
+        border-radius: 8px;
+        background: rgba(251, 250, 247, 0.045);
+        color: var(--ink);
+      }
+
+      .nav button {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        height: 38px;
+        padding: 0 10px;
+        text-align: left;
+      }
+
+      .nav button.active {
+        border-color: rgba(175, 169, 236, 0.54);
+        background: var(--accent-soft);
+        color: #fff;
+      }
+
+      .nav-count,
+      .count {
+        color: var(--quiet);
+        font-size: 11px;
+      }
+
+      .filter-area {
+        min-height: 0;
+        overflow: hidden;
+        display: grid;
+        align-content: start;
+        gap: 12px;
+      }
+
+      .filter-title,
+      .detail-head,
+      .split {
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .group {
+        display: grid;
+        gap: 8px;
+        padding: 0 0 12px;
+        border-bottom: 0.5px solid var(--line);
+      }
+
+      .group:last-child {
+        border-bottom: 0;
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+      }
+
+      .status {
+        min-width: 0;
+        padding: 8px;
+        border: 0.5px solid var(--line);
+        border-radius: 8px;
+        background: rgba(251, 250, 247, 0.04);
+      }
+
+      .status strong {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 12px;
+      }
+
+      .status.active {
+        border-color: rgba(175, 169, 236, 0.56);
+        background: rgba(238, 237, 254, 0.12);
+      }
+
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        min-width: 0;
+        height: 27px;
+        padding: 0 9px;
+        gap: 5px;
+        color: #ddd8cf;
+        font-size: 12px;
+      }
+
+      .chip.hot {
+        border-color: rgba(175, 169, 236, 0.42);
+        background: var(--accent-soft);
+        color: #f2efff;
+      }
+
+      .chip.warn {
+        border-color: rgba(240, 180, 88, 0.38);
+        background: rgba(240, 180, 88, 0.1);
+        color: #ffd99b;
+      }
+
+      .saved-view {
+        display: grid;
+        gap: 4px;
+        padding: 11px;
+        border-color: rgba(175, 169, 236, 0.34);
+        background:
+          linear-gradient(135deg, rgba(238, 237, 254, 0.12), rgba(216, 93, 115, 0.07)),
+          rgba(251, 250, 247, 0.04);
+      }
+
+      .toolbar {
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      .title p {
+        margin-top: 6px;
+      }
+
+      .actions {
+        gap: 8px;
+      }
+
+      .button,
+      .icon-button {
+        justify-content: center;
+        height: 34px;
+        padding: 0 12px;
+        font-size: 12px;
+      }
+
+      .icon-button {
+        width: 34px;
+        padding: 0;
+      }
+
+      .button.primary {
+        border-color: rgba(175, 169, 236, 0.7);
+        background: #eeedfe;
+        color: #534ab7;
+        font-weight: 700;
+      }
+
+      .query-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .search {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        min-height: 46px;
+        padding: 0 12px;
+        border-color: rgba(175, 169, 236, 0.38);
+        background: rgba(31, 29, 25, 0.74);
+      }
+
+      .query-tokens {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .token {
+        max-width: 140px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(238, 237, 254, 0.12);
+        color: #eeedfe;
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .view-tabs {
+        gap: 4px;
+        padding: 4px;
+        border: 0.5px solid var(--line);
+        border-radius: 8px;
+        background: rgba(251, 250, 247, 0.045);
+      }
+
+      .tab {
+        width: 70px;
+        height: 36px;
+        border-color: transparent;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .tab.active {
+        background: rgba(238, 237, 254, 0.13);
+        color: #fff;
+      }
+
+      .active-filters {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 14px 0;
+      }
+
+      .active-left,
+      .active-right {
+        display: flex;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .metric {
+        min-width: 0;
+        padding: 11px 12px;
+        background:
+          radial-gradient(circle at 100% 0%, rgba(175, 169, 236, 0.12), transparent 38%),
+          rgba(251, 250, 247, 0.055);
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 5px;
+        font-size: 24px;
+        line-height: 1;
+      }
+
+      .metric small {
+        color: var(--green);
+        font-size: 11px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        align-content: start;
+      }
+
+      .card {
+        min-width: 0;
+        overflow: hidden;
+        border: 0.5px solid var(--line);
+        border-radius: 8px;
+        background: rgba(251, 250, 247, 0.055);
+      }
+
+      .card.selected {
+        border-color: rgba(175, 169, 236, 0.76);
+        box-shadow: 0 0 0 3px rgba(175, 169, 236, 0.12);
+      }
+
+      .image {
+        position: relative;
+        aspect-ratio: 4 / 5;
+        overflow: hidden;
+        background: #d5cec0;
+      }
+
+      .image::before,
+      .image::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+      }
+
+      .image::after {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.04));
+      }
+
+      .photo-a {
+        background:
+          radial-gradient(circle at 52% 34%, #f0cda8 0 9%, transparent 10%),
+          linear-gradient(140deg, #42505f 0 22%, #d4c8a8 22% 36%, #b77d5a 36% 68%, #2f2b25 68%);
+      }
+
+      .photo-b {
+        background:
+          radial-gradient(circle at 72% 20%, #ead78d 0 8%, transparent 9%),
+          linear-gradient(160deg, #24231f 0 26%, #6d846f 26% 52%, #d8c58e 52% 74%, #6f4450 74%);
+      }
+
+      .photo-c {
+        background:
+          repeating-linear-gradient(90deg, #d9d3c5 0 14px, #b9b3a7 14px 28px),
+          #d9d3c5;
+      }
+
+      .photo-d {
+        background:
+          radial-gradient(circle at 34% 36%, #eab99b 0 12%, transparent 13%),
+          radial-gradient(circle at 68% 30%, #647f85 0 18%, transparent 19%),
+          linear-gradient(135deg, #3b302d, #8a4c4c 56%, #df9d60);
+      }
+
+      .photo-e {
+        background:
+          linear-gradient(115deg, rgba(175, 169, 236, 0.32), transparent 30%),
+          linear-gradient(160deg, #2f2c26, #42505f 48%, #947047 49%, #2d2425);
+      }
+
+      .photo-f {
+        background:
+          radial-gradient(circle at 42% 42%, #ead0a4 0 13%, transparent 14%),
+          linear-gradient(130deg, #45493e, #65725b 42%, #8b5868);
+      }
+
+      .select-box {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 1;
+        width: 20px;
+        height: 20px;
+        border: 0.5px solid rgba(255, 255, 255, 0.72);
+        border-radius: 6px;
+        background: rgba(31, 29, 25, 0.34);
+      }
+
+      .card.selected .select-box {
+        border-color: #eeedfe;
+        background: #eeedfe;
+      }
+
+      .card.selected .select-box::after {
+        content: "";
+        position: absolute;
+        left: 6px;
+        top: 3px;
+        width: 5px;
+        height: 10px;
+        border: solid #534ab7;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+
+      .card-body {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      .card-title {
+        min-width: 0;
+        overflow: hidden;
+        color: #fffaf0;
+        font-size: 13px;
+        font-weight: 700;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tag-row,
+      .inline-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      .tag {
+        max-width: 100%;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: var(--tag);
+        color: #ded8cc;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tag.accent {
+        background: rgba(238, 237, 254, 0.14);
+        color: #eeedfe;
+      }
+
+      .card-foot {
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--quiet);
+        font-size: 11px;
+      }
+
+      .stars {
+        color: var(--amber);
+        letter-spacing: 1px;
+      }
+
+      .preview {
+        overflow: hidden;
+        border: 0.5px solid var(--line);
+        border-radius: 8px;
+        background: rgba(251, 250, 247, 0.045);
+      }
+
+      .preview .image {
+        aspect-ratio: 4 / 5;
+        max-height: 250px;
+      }
+
+      .preview-body {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .properties {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .property {
+        min-width: 0;
+        padding: 9px;
+      }
+
+      .property span {
+        display: block;
+        color: var(--quiet);
+        font-size: 11px;
+      }
+
+      .property strong {
+        display: block;
+        margin-top: 3px;
+        font-size: 13px;
+      }
+
+      .field-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field {
+        display: grid;
+        grid-template-columns: 76px minmax(0, 1fr);
+        align-items: start;
+        gap: 8px;
+        padding: 9px;
+      }
+
+      .field label {
+        color: var(--quiet);
+        font-size: 11px;
+      }
+
+      .note-box {
+        display: grid;
+        gap: 5px;
+        padding: 10px;
+      }
+
+      .note-box strong {
+        font-size: 12px;
+      }
+
+      .bottom-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="board">
+      <div class="shell">
+        <aside class="panel left">
+          <div class="brand">
+            <div class="logo">
+              <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="m8 14 2.2-2.4 3 3.3 2-2.1L20 18"></path><circle cx="9" cy="9" r="1.4"></circle></svg>
+            </div>
+            <div>
+              <h1>图片管理</h1>
+              <p class="muted">摄影素材库筛选</p>
+            </div>
+          </div>
+
+          <div class="nav">
+            <button class="active" type="button"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg><span>图片素材</span><span class="nav-count">128</span></button>
+            <button type="button"><svg class="icon" viewBox="0 0 24 24"><path d="M4 12h16"></path><path d="M4 6h16"></path><path d="M4 18h10"></path></svg><span>待分析</span><span class="nav-count">36</span></button>
+            <button type="button"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg><span>适合复刻</span><span class="nav-count">42</span></button>
+          </div>
+
+          <section class="filter-area" aria-label="真实字段筛选">
+            <div class="filter-title split">
+              <h3>筛选字段</h3>
+              <span class="quiet">来自 Notion 素材库</span>
+            </div>
+
+            <div class="group">
+              <div class="split">
+                <h3>状态</h3>
+                <span class="quiet">Select</span>
+              </div>
+              <div class="status-grid">
+                <div class="status active"><strong>待分析</strong><span class="count">36</span></div>
+                <div class="status active"><strong>已拆解</strong><span class="count">72</span></div>
+                <div class="status"><strong>已复刻</strong><span class="count">18</span></div>
+                <div class="status"><strong>已内化</strong><span class="count">9</span></div>
+              </div>
+            </div>
+
+            <div class="group">
+              <div class="split">
+                <h3>价值判断</h3>
+                <span class="quiet">评分 / 复刻</span>
+              </div>
+              <div class="tag-list">
+                <span class="chip hot">评分 4 分以上</span>
+                <span class="chip hot">适合复刻</span>
+                <span class="chip">来源图片序号 1-3</span>
+              </div>
+            </div>
+
+            <div class="group">
+              <div class="split">
+                <h3>核心标签</h3>
+                <span class="quiet">Multi-select</span>
+              </div>
+              <div class="tag-list">
+                <span class="chip hot">构图标签</span>
+                <span class="chip hot">色彩标签</span>
+                <span class="chip hot">动作标签</span>
+                <span class="chip">服装类型</span>
+                <span class="chip">情绪氛围</span>
+                <span class="chip">人数类型</span>
+              </div>
+            </div>
+
+            <div class="group">
+              <div class="split">
+                <h3>拍摄条件</h3>
+                <span class="quiet">Multi-select</span>
+              </div>
+              <div class="tag-list">
+                <span class="chip">光线标签</span>
+                <span class="chip">场景</span>
+                <span class="chip">时间类型</span>
+                <span class="chip">天气类型</span>
+                <span class="chip">机位角度</span>
+                <span class="chip">焦段类型</span>
+                <span class="chip">景别</span>
+              </div>
+            </div>
+
+            <div class="group">
+              <div class="split">
+                <h3>补充信息</h3>
+                <span class="quiet">文本搜索</span>
+              </div>
+              <div class="tag-list">
+                <span class="chip">新增标签</span>
+                <span class="chip">学习点</span>
+                <span class="chip">复刻提示</span>
+                <span class="chip">来源标题</span>
+                <span class="chip">作者</span>
+              </div>
+            </div>
+          </section>
+
+          <div class="saved-view">
+            <strong>常用视图</strong>
+            <span class="muted">已拆解 · 适合复刻 · 构图/色彩/动作有标签</span>
+          </div>
+        </aside>
+
+        <main class="panel main">
+          <header class="toolbar">
+            <div class="title">
+              <h2>图片素材库</h2>
+              <p class="muted">按真实属性快速缩小图片范围，再进入详情复用学习点和复刻提示。</p>
+            </div>
+            <div class="actions">
+              <button class="button" type="button">批量改状态</button>
+              <button class="button" type="button">批量复刻标记</button>
+              <button class="icon-button" type="button" aria-label="刷新"><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-6.2-2.6"></path><path d="M3 12a9 9 0 0 1 9-9 8.7 8.7 0 0 1 6.2 2.6"></path><path d="M18 2v4h4"></path><path d="M6 22v-4H2"></path></svg></button>
+              <button class="button primary" type="button">导入图片</button>
+            </div>
+          </header>
+
+          <section class="query-row">
+            <div class="search">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+              <div class="query-tokens">
+                <span class="token">构图标签: 留白</span>
+                <span class="token">色彩标签: 暖色</span>
+                <span class="token">适合复刻</span>
+                <span class="quiet">搜索标题、来源标题、作者、标签、学习点、复刻提示</span>
+              </div>
+              <span class="quiet">Enter</span>
+            </div>
+            <div class="view-tabs">
+              <span class="tab active">网格</span>
+              <span class="tab">瀑布</span>
+              <span class="tab">表格</span>
+            </div>
+          </section>
+
+          <section class="active-filters">
+            <div class="active-left">
+              <span class="chip warn">当前筛出 128 张</span>
+              <span class="chip hot">状态：已拆解</span>
+              <span class="chip hot">评分：4+</span>
+              <span class="chip hot">适合复刻</span>
+              <span class="chip">标签：留白 / 暖色</span>
+            </div>
+            <div class="active-right">
+              <span class="chip">排序：创建时间</span>
+              <span class="chip">清空</span>
+            </div>
+          </section>
+
+          <section class="metrics" aria-label="概览">
+            <article class="metric"><span>当前结果</span><strong>128</strong><small>由全部素材筛选</small></article>
+            <article class="metric"><span>可筛标签</span><strong>80</strong><small>接口 facets.tags</small></article>
+            <article class="metric"><span>适合复刻</span><strong>42</strong><small>Checkbox 字段</small></article>
+            <article class="metric"><span>高评分</span><strong>64</strong><small>评分 4-5 分</small></article>
+          </section>
+
+          <section class="grid" aria-label="图片结果">
+            <article class="card selected">
+              <div class="image photo-a"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">暖色留白人像参考</div>
+                <div class="tag-row"><span class="tag accent">已拆解</span><span class="tag">构图: 留白</span><span class="tag">色彩: 暖色</span></div>
+                <div class="card-foot"><span>来源图 1 · 适合复刻</span><span class="stars">★★★★★</span></div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="image photo-b"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">街拍逆光动作</div>
+                <div class="tag-row"><span class="tag accent">已拆解</span><span class="tag">动作: 站姿</span><span class="tag">光线: 逆光</span></div>
+                <div class="card-foot"><span>来源图 2</span><span class="stars">★★★★</span></div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="image photo-c"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">排版构图截图</div>
+                <div class="tag-row"><span class="tag">待分析</span><span class="tag">景别: 特写</span><span class="tag">新增标签</span></div>
+                <div class="card-foot"><span>来源图 3</span><span class="stars">★★★</span></div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="image photo-d"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">双人情绪氛围</div>
+                <div class="tag-row"><span class="tag accent">已拆解</span><span class="tag">人数: 双人</span><span class="tag">情绪: 电影感</span></div>
+                <div class="card-foot"><span>来源图 4 · 适合复刻</span><span class="stars">★★★★★</span></div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="image photo-e"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">产品背景和场景</div>
+                <div class="tag-row"><span class="tag">已内化</span><span class="tag">场景: 室内</span><span class="tag">焦段: 50</span></div>
+                <div class="card-foot"><span>来源图 5</span><span class="stars">★★★★</span></div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="image photo-f"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">日常感教程封面</div>
+                <div class="tag-row"><span class="tag accent">已复刻</span><span class="tag">情绪: 日常感</span><span class="tag">景别: 半身</span></div>
+                <div class="card-foot"><span>来源图 1 · 适合复刻</span><span class="stars">★★★★★</span></div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="image photo-b"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">晴天街道全身</div>
+                <div class="tag-row"><span class="tag">已拆解</span><span class="tag">天气: 晴天</span><span class="tag">景别: 全身</span></div>
+                <div class="card-foot"><span>来源图 6</span><span class="stars">★★★★</span></div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="image photo-d"><span class="select-box"></span></div>
+              <div class="card-body">
+                <div class="card-title">低机位故事感</div>
+                <div class="tag-row"><span class="tag accent">已拆解</span><span class="tag">机位: 低机位</span><span class="tag">动作: 坐姿</span></div>
+                <div class="card-foot"><span>来源图 2 · 适合复刻</span><span class="stars">★★★★★</span></div>
+              </div>
+            </article>
+          </section>
+        </main>
+
+        <aside class="panel right">
+          <div class="detail-head">
+            <div>
+              <h3>选中图片属性</h3>
+              <p class="muted">字段与 Notion 素材库一致</p>
+            </div>
+            <button class="icon-button" type="button" aria-label="更多"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg></button>
+          </div>
+
+          <section class="preview">
+            <div class="image photo-a"></div>
+            <div class="preview-body">
+              <strong>暖色留白人像参考</strong>
+              <div class="inline-tags">
+                <span class="tag accent">已拆解</span>
+                <span class="tag">适合复刻</span>
+                <span class="tag">评分 5</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="properties">
+            <div class="property"><span>来源标题</span><strong>夏日拍照姿势</strong></div>
+            <div class="property"><span>作者</span><strong>摄影笔记</strong></div>
+            <div class="property"><span>来源图片序号</span><strong>1</strong></div>
+            <div class="property"><span>图片链接</span><strong>已保存</strong></div>
+          </section>
+
+          <section class="field-stack">
+            <div class="field"><label>构图标签</label><div class="inline-tags"><span class="tag accent">留白</span><span class="tag">三分法</span></div></div>
+            <div class="field"><label>色彩标签</label><div class="inline-tags"><span class="tag accent">暖色</span><span class="tag">低饱和</span></div></div>
+            <div class="field"><label>动作标签</label><div class="inline-tags"><span class="tag">站姿</span><span class="tag">回头</span></div></div>
+            <div class="field"><label>拍摄条件</label><div class="inline-tags"><span class="tag">逆光</span><span class="tag">街拍</span><span class="tag">白天</span><span class="tag">晴天</span></div></div>
+            <div class="field"><label>镜头视角</label><div class="inline-tags"><span class="tag">平视</span><span class="tag">50</span><span class="tag">半身</span></div></div>
+          </section>
+
+          <section class="note-box">
+            <strong>学习点</strong>
+            <p class="muted">主体放在右侧三分线，左上保留干净背景，适合放标题或用于封面二次裁切。</p>
+          </section>
+
+          <section class="note-box">
+            <strong>复刻提示</strong>
+            <p class="muted">白天逆光，人物侧身回头，背景选择低饱和墙面，服装避免过多花纹。</p>
+          </section>
+
+          <div class="bottom-actions">
+            <button class="button" type="button">打开原文</button>
+            <button class="button" type="button">打开 Notion</button>
+            <button class="button" type="button">复制图片</button>
+            <button class="button primary" type="button">保存筛选</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>

@@ -33,6 +33,8 @@ const state = {
 
 const BACKGROUND_STORAGE_KEY = "xhs-notion-console-background";
 const DESCRIPTION_PANEL_STORAGE_KEY = "xhs-notion-console-description-panel";
+const ALBUM_ORDER_STORAGE_KEY = "xhs-notion-console-album-order";
+const BACKGROUND_SYNC_CHANNEL = "xhs-notion-console-background-sync";
 const MAX_BACKGROUND_SOURCE_BYTES = 24 * 1024 * 1024;
 const MAX_BACKGROUND_DATA_URL_BYTES = 3.5 * 1024 * 1024;
 const BACKGROUND_MAX_EDGE = 2200;
@@ -152,6 +154,7 @@ const el = {
   refreshButton: document.querySelector("#refreshButton"),
   backgroundLayer: document.querySelector("#backgroundLayer"),
   backgroundInput: document.querySelector("#backgroundInput"),
+  materialsButton: document.querySelector("#materialsButton"),
   backgroundButton: document.querySelector("#backgroundButton"),
   clearBackgroundButton: document.querySelector("#clearBackgroundButton"),
   searchButton: document.querySelector("#searchButton"),
@@ -698,6 +701,7 @@ async function handleBackgroundUpload(file) {
   try {
     const { dataUrl, outputBytes } = await prepareBackgroundImage(file);
     applyBackground(dataUrl);
+    publishBackgroundToMaterials();
     try {
       localStorage.setItem(BACKGROUND_STORAGE_KEY, dataUrl);
       setMessage(
@@ -719,8 +723,49 @@ async function handleBackgroundUpload(file) {
 function clearBackground() {
   localStorage.removeItem(BACKGROUND_STORAGE_KEY);
   applyBackground("");
+  publishBackgroundToMaterials();
   if (el.backgroundInput) el.backgroundInput.value = "";
   setMessage("背景已清除。", "success");
+}
+
+function getCurrentBackgroundDataUrl() {
+  try {
+    const saved = localStorage.getItem(BACKGROUND_STORAGE_KEY);
+    if (saved) return saved;
+  } catch (error) {
+    // Fall back to the live CSS variable when storage is unavailable.
+  }
+
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue("--custom-bg-image")
+    .trim();
+  const match = value.match(/^url\(["']?(.*?)["']?\)$/);
+  return match ? match[1] : "";
+}
+
+function publishBackgroundToMaterials(targetWindow = null) {
+  const payload = {
+    type: "xhs-background-sync",
+    background: getCurrentBackgroundDataUrl(),
+  };
+
+  if (targetWindow) {
+    try {
+      targetWindow.postMessage(payload, window.location.origin);
+    } catch (error) {
+      // The local background cache remains the fallback.
+    }
+  }
+
+  if ("BroadcastChannel" in window) {
+    try {
+      const channel = new BroadcastChannel(BACKGROUND_SYNC_CHANNEL);
+      channel.postMessage(payload);
+      channel.close();
+    } catch (error) {
+      // BroadcastChannel is optional.
+    }
+  }
 }
 
 async function requestJson(url, options = {}) {
@@ -728,8 +773,14 @@ async function requestJson(url, options = {}) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  const data = await response.json();
+  const contentType = response.headers.get("Content-Type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : { error: await response.text() };
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("需要登录后访问管理台。请刷新页面并输入管理员账号密码。");
+    }
     throw new Error(data.error || data.message || `请求失败：${response.status}`);
   }
   return data;
@@ -980,6 +1031,14 @@ function queryParams({ cursor = "" } = {}) {
 async function loadAlbums() {
   const data = await requestJson("/api/albums");
   state.albums = data.albums || [];
+  const serverOrder = state.albums.map((album) => album.id || album.name);
+  const localOrder = normalizeAlbumOrderValues(readLocalAlbumOrder(), state.albums);
+  if (localOrder.length && !albumOrdersEqual(localOrder, serverOrder)) {
+    applyAlbumOrderByIds(localOrder);
+    persistAlbumOrder({ quiet: true });
+    return;
+  }
+  saveLocalAlbumOrder(serverOrder);
   populateAlbumSelects();
 }
 
@@ -1263,71 +1322,107 @@ function renderAlbumDescriptionList() {
 }
 
 function applyAlbumOrderByNames(albumNames) {
-  const rankByName = new Map(albumNames.map((name, index) => [name, index]));
-  const rankForName = (name) =>
-    rankByName.has(name) ? rankByName.get(name) : Number.MAX_SAFE_INTEGER;
-  state.albumDescriptions = [...state.albumDescriptions].sort(
-    (first, second) =>
-      rankForName(first.name) - rankForName(second.name) ||
-      first.name.localeCompare(second.name, "zh-Hans-CN")
-  );
-  const rankById = new Map(
-    state.albumDescriptions.map((album, index) => [album.id, index])
-  );
-  state.albums = [...state.albums].sort((first, second) => {
-    const firstRank = rankById.has(first.id)
-      ? rankById.get(first.id)
-      : rankForName(first.name);
-    const secondRank = rankById.has(second.id)
-      ? rankById.get(second.id)
-      : rankForName(second.name);
-    return firstRank - secondRank || first.name.localeCompare(second.name, "zh-Hans-CN");
-  });
-  populateAlbumSelects();
+  const nameToAlbum = new Map(state.albums.map((album) => [album.name, album]));
+  const albumIds = albumNames
+    .map((name) => nameToAlbum.get(name)?.id || name)
+    .filter(Boolean);
+  applyAlbumOrderByIds(albumIds);
 }
 
-function applyAlbumOrderByIds(albumIds) {
-  const rankById = new Map(albumIds.map((id, index) => [id, index]));
-  const rankForAlbum = (album) => {
+function normalizeAlbumOrderValues(values, albums = state.albums) {
+  const idToAlbum = new Map(albums.map((album) => [album.id || album.name, album]));
+  const nameToAlbum = new Map(albums.map((album) => [album.name, album]));
+  const normalized = [];
+  const seen = new Set();
+  for (const value of values || []) {
+    const cleanValue = String(value || "").trim();
+    const album = idToAlbum.get(cleanValue) || nameToAlbum.get(cleanValue);
+    const albumId = album?.id || album?.name || "";
+    if (albumId && !seen.has(albumId)) {
+      normalized.push(albumId);
+      seen.add(albumId);
+    }
+  }
+  for (const album of albums) {
     const albumId = album.id || album.name;
-    if (rankById.has(albumId)) return rankById.get(albumId);
-    if (rankById.has(album.name)) return rankById.get(album.name);
-    return Number.MAX_SAFE_INTEGER;
-  };
-  state.albums = [...state.albums].sort(
-    (first, second) =>
-      rankForAlbum(first) - rankForAlbum(second) ||
-      first.name.localeCompare(second.name, "zh-Hans-CN")
+    if (albumId && !seen.has(albumId)) {
+      normalized.push(albumId);
+      seen.add(albumId);
+    }
+  }
+  return normalized;
+}
+
+function albumOrdersEqual(first, second) {
+  if (first.length !== second.length) return false;
+  return first.every((value, index) => value === second[index]);
+}
+
+function readLocalAlbumOrder() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ALBUM_ORDER_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveLocalAlbumOrder(albumIds = state.albums.map((album) => album.id || album.name)) {
+  const normalized = normalizeAlbumOrderValues(albumIds);
+  try {
+    localStorage.setItem(ALBUM_ORDER_STORAGE_KEY, JSON.stringify(normalized));
+  } catch (error) {
+    // Local order is a resilience cache; backend persistence remains authoritative.
+  }
+  return normalized;
+}
+
+function sortAlbumDescriptionsByAlbums() {
+  const rankById = new Map(
+    state.albums.map((album, index) => [album.id || album.name, index])
   );
   const rankByName = new Map(
     state.albums.map((album, index) => [album.name, index])
   );
   state.albumDescriptions = [...state.albumDescriptions].sort((first, second) => {
-    const firstRank = rankByName.has(first.name)
-      ? rankByName.get(first.name)
-      : Number.MAX_SAFE_INTEGER;
-    const secondRank = rankByName.has(second.name)
-      ? rankByName.get(second.name)
-      : Number.MAX_SAFE_INTEGER;
+    const firstRank = rankById.get(first.id || first.name) ?? rankByName.get(first.name) ?? Number.MAX_SAFE_INTEGER;
+    const secondRank = rankById.get(second.id || second.name) ?? rankByName.get(second.name) ?? Number.MAX_SAFE_INTEGER;
     return firstRank - secondRank || first.name.localeCompare(second.name, "zh-Hans-CN");
   });
+}
+
+function applyAlbumOrderByIds(albumIds) {
+  const normalizedIds = normalizeAlbumOrderValues(albumIds);
+  const rankById = new Map(normalizedIds.map((id, index) => [id, index]));
+  const rankForAlbum = (album) =>
+    rankById.get(album.id || album.name) ?? rankById.get(album.name) ?? Number.MAX_SAFE_INTEGER;
+  state.albums = [...state.albums].sort(
+    (first, second) =>
+      rankForAlbum(first) - rankForAlbum(second) ||
+      first.name.localeCompare(second.name, "zh-Hans-CN")
+  );
+  sortAlbumDescriptionsByAlbums();
   populateAlbumSelects();
 }
 
-async function persistAlbumOrder() {
-  const albumIds = state.albums.map((album) => album.id || album.name).filter(Boolean);
+async function persistAlbumOrder({ quiet = false } = {}) {
+  const albumIds = saveLocalAlbumOrder();
+  const albumNames = state.albums.map((album) => album.name).filter(Boolean);
   try {
     const data = await requestJson("/api/albums/order", {
       method: "POST",
-      body: JSON.stringify({ album_ids: albumIds }),
+      body: JSON.stringify({ album_ids: albumIds, album_names: albumNames }),
     });
     if (Array.isArray(data.albums)) {
       state.albums = data.albums;
+      saveLocalAlbumOrder(data.order || data.albums.map((album) => album.id || album.name));
       populateAlbumSelects();
+      if (quiet) return;
     }
     setMessage(data.message || "专辑顺序已保存。", "success");
   } catch (error) {
     setMessage(`专辑排序保存失败：${error.message}`, "error");
+    return;
     await loadAlbums();
     await loadAlbumDescriptions();
   }
@@ -1586,6 +1681,7 @@ async function saveAlbumDescription({ clear = false } = {}) {
 async function loadAlbumDescriptions() {
   const data = await requestJson("/api/album-descriptions");
   state.albumDescriptions = data.albums || [];
+  sortAlbumDescriptionsByAlbums();
   const activeStillExists = state.albumDescriptions.some(
     (album) => album.name === state.activeDescriptionAlbum
   );
@@ -2131,6 +2227,7 @@ function setImageMaterialNotice(message = "", type = "", links = []) {
     anchor.href = link.url;
     anchor.target = "_blank";
     anchor.rel = "noreferrer";
+    anchor.title = link.fullTitle || link.title || "";
     anchor.textContent = link.title || `素材 ${index + 1}`;
     el.imageMaterialNotice.appendChild(anchor);
   });
@@ -2307,7 +2404,8 @@ async function submitPhotoMaterials(event) {
       }),
     });
     const createdLinks = (data.created || []).map((item) => ({
-      title: item.title || `素材 #${item.index || ""}`,
+      title: item.index ? `素材 #${item.index}` : "素材",
+      fullTitle: item.title || "",
       url: item.url,
     }));
     if (data.failed) {
@@ -2627,10 +2725,16 @@ async function runBatchAction({
         ...payload,
       }),
     });
-    const resultMessage = data.message || "批量操作已完成。";
+    const firstFailure = data.failures?.[0]?.error;
+    const resultMessage =
+      data.message || "批量操作已完成。";
+    const detailedMessage =
+      data.failed && firstFailure
+        ? `${resultMessage} 首个失败原因：${firstFailure}`
+        : resultMessage;
     const resultType = data.failed ? "error" : "success";
     await loadNotes();
-    setMessage(resultMessage, resultType);
+    setMessage(detailedMessage, resultType);
   } catch (error) {
     setMessage(error.message, "error");
   } finally {
@@ -2836,6 +2940,11 @@ function bindEvents() {
   });
   bindMaterialRatingStars();
   el.imageMaterialForm.addEventListener("submit", submitPhotoMaterials);
+  el.materialsButton?.addEventListener("click", () => {
+    const materialsWindow = window.open("/materials.html", "_blank");
+    window.setTimeout(() => publishBackgroundToMaterials(materialsWindow), 250);
+    window.setTimeout(() => publishBackgroundToMaterials(materialsWindow), 900);
+  });
   el.statusSelect.addEventListener("change", loadNotes);
   el.albumFilterSelect.addEventListener("change", loadNotes);
   el.targetAlbumSelect.addEventListener("change", handleTargetAlbumChange);
@@ -2981,6 +3090,7 @@ function bindEvents() {
 }
 
 async function init() {
+  registerServiceWorker();
   loadSavedBackground();
   bindEvents();
   restoreDescriptionPanelState();
@@ -2992,6 +3102,18 @@ async function init() {
     el.resultMeta.textContent = "连接失败";
     setMessage(error.message, "error");
   }
+}
+
+function registerServiceWorker() {
+  const canRegister =
+    "serviceWorker" in navigator &&
+    (location.protocol === "https:" ||
+      location.hostname === "localhost" ||
+      location.hostname === "127.0.0.1");
+  if (!canRegister) return;
+  navigator.serviceWorker.register("/sw.js").catch(() => {
+    // The app remains fully online-capable if browser policy blocks registration.
+  });
 }
 
 init();

@@ -4,8 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer-when-downgrade" />
+    <meta name="theme-color" content="#534ab7" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="小红书管理" />
     <title>小红书收藏管理台</title>
-    <link rel="stylesheet" href="/styles.css?v=20260726-photo-save-feedback" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="stylesheet" href="/styles.css?v=20260802-material-bg-bridge" />
   </head>
   <body>
     <div id="backgroundLayer" class="background-layer" aria-hidden="true"></div>
@@ -18,6 +25,7 @@
         </div>
         <div class="header-actions" aria-label="页面操作">
           <input id="backgroundInput" class="sr-only" type="file" accept="image/*" />
+          <button id="materialsButton" class="utility-button" type="button">图片管理</button>
           <button id="backgroundButton" class="utility-button" type="button">上传背景</button>
           <button id="clearBackgroundButton" class="utility-button" type="button">清除背景</button>
           <button id="refreshButton" class="icon-button" type="button" title="刷新">⟳</button>
@@ -459,7 +467,7 @@
           </label>
           <label>
             <span>动作标签</span>
-            <input id="actionTagsInput" type="text" placeholder="回头, 走路, 低头, 伸手" autocomplete="off" />
+            <input id="actionTagsInput" type="text" placeholder="站姿, 坐姿, 蹲姿, 躺姿" autocomplete="off" />
           </label>
           <label>
             <span>服装类型</span>
@@ -547,6 +555,6 @@
       </div>
     </section>
 
-    <script src="/app.js?v=20260726-material-two-column-stars"></script>
+    <script src="/app.js?v=20260802-material-bg-bridge"></script>
   </body>
 </html>

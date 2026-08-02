@@ -85,7 +85,7 @@ def read_config_file(path: Optional[Path] = None) -> Dict[str, Any]:
     config_path = path or PROGRAM_DIR / "config.json"
     if not config_path.exists():
         return {}
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
     return data if isinstance(data, dict) else {}
 

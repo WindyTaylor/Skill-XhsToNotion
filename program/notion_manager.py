@@ -68,6 +68,22 @@ MATERIAL_STATUS_PROP = "状态"
 MATERIAL_IMAGE_INDEX_PROP = "来源图片序号"
 MATERIAL_REMAKE_READY_PROP = "适合复刻"
 MATERIAL_RATING_PROP = "评分"
+MATERIAL_FILTER_TAG_PROPS = (
+    MATERIAL_COMPOSITION_PROP,
+    MATERIAL_COLOR_PROP,
+    MATERIAL_ACTION_PROP,
+    MATERIAL_CLOTHING_PROP,
+    MATERIAL_MOOD_PROP,
+    MATERIAL_PEOPLE_PROP,
+    MATERIAL_LIGHT_PROP,
+    MATERIAL_SCENE_PROP,
+    MATERIAL_TIME_PROP,
+    MATERIAL_WEATHER_PROP,
+    MATERIAL_ANGLE_PROP,
+    MATERIAL_FOCAL_LENGTH_PROP,
+    MATERIAL_SHOT_PROP,
+    MATERIAL_CUSTOM_TAGS_PROP,
+)
 
 VALID_STATUSES = (
     "待阅读",
@@ -103,6 +119,7 @@ MAX_LIMIT = 200
 DEFAULT_MAX_SCAN = 500
 MAX_ALBUM_DESCRIPTION_LENGTH = 2000
 MAX_ALBUM_NAME_LENGTH = 100
+MAX_MATERIAL_TITLE_BASE_LENGTH = 40
 ALBUM_DESCRIPTIONS_LOCK = threading.Lock()
 ALBUM_METADATA_LOCK = threading.Lock()
 XHS_REQUEST_LOCK = threading.Lock()
@@ -154,6 +171,16 @@ def _normalize(value):
     return _compact_text(value).lower()
 
 
+def _material_title_base(value):
+    text = _compact_text(value)
+    if not text:
+        return "摄影素材"
+    text = re.split(r"\s*#", text, maxsplit=1)[0].strip() or text
+    if len(text) > MAX_MATERIAL_TITLE_BASE_LENGTH:
+        return f"{text[:MAX_MATERIAL_TITLE_BASE_LENGTH].rstrip()}..."
+    return text
+
+
 def split_filter_terms(value):
     terms = []
     seen = set()
@@ -168,7 +195,7 @@ def split_filter_terms(value):
 def _load_json_file(path):
     if not path.exists():
         return {}
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
     return data if isinstance(data, dict) else {}
 
@@ -345,10 +372,24 @@ def normalize_album_order(album_ids, album_map):
         for album_id in album_map.values()
         if str(album_id).strip()
     }
+    name_to_id = {
+        str(name).strip(): str(album_id).strip()
+        for name, album_id in album_map.items()
+        if str(name).strip() and str(album_id).strip()
+    }
+    casefold_name_to_id = {
+        name.casefold(): album_id
+        for name, album_id in name_to_id.items()
+    }
     order = []
     seen = set()
     for album_id in album_ids:
-        clean_id = str(album_id).strip()
+        clean_value = str(album_id).strip()
+        clean_id = (
+            clean_value
+            if clean_value in current_ids
+            else name_to_id.get(clean_value) or casefold_name_to_id.get(clean_value.casefold(), "")
+        )
         if clean_id and clean_id in current_ids and clean_id not in seen:
             order.append(clean_id)
             seen.add(clean_id)
@@ -433,6 +474,37 @@ def read_multi_select(prop):
         for item in prop.get("multi_select", [])
         if item.get("name", "").strip()
     ]
+
+
+def read_number(prop):
+    value = prop.get("number")
+    return value if isinstance(value, (int, float)) else None
+
+
+def read_checkbox(prop):
+    return bool(prop.get("checkbox"))
+
+
+def read_relation_ids(prop):
+    return [
+        item.get("id")
+        for item in prop.get("relation", [])
+        if item.get("id")
+    ]
+
+
+def read_first_file_url(prop):
+    for item in prop.get("files", []):
+        item_type = item.get("type")
+        if item_type == "external":
+            url = (item.get("external") or {}).get("url")
+        elif item_type == "file":
+            url = (item.get("file") or {}).get("url")
+        else:
+            url = ""
+        if url:
+            return url
+    return ""
 
 
 def rich_text_payload(value):
@@ -568,6 +640,9 @@ class NotionNoteManager:
     def ordered_album_items(self):
         order_file = getattr(self, "album_order_file", ALBUM_ORDER_FILE)
         order = load_album_order(order_file)
+        normalized_order = normalize_album_order(order, self.album_map)
+        if normalized_order != order:
+            order = save_album_order(order, self.album_map, order_file)
         rank = {album_id: index for index, album_id in enumerate(order)}
         fallback_rank = len(rank)
         return sorted(
@@ -814,9 +889,10 @@ class NotionNoteManager:
             raise NotionManagerError("专辑排序必须是数组。")
         order_file = getattr(self, "album_order_file", ALBUM_ORDER_FILE)
         with ALBUM_METADATA_LOCK:
-            save_album_order(album_ids, self.album_map, order_file)
+            order = save_album_order(album_ids, self.album_map, order_file)
         return {
             "ok": True,
+            "order": order,
             "albums": self.list_albums(),
             "message": "专辑顺序已保存。",
         }
@@ -886,6 +962,46 @@ class NotionNoteManager:
             return {"ok": True, "asset": result}
         except CoverAssetError as exc:
             raise NotionManagerError(str(exc)) from exc
+
+    def extract_cover_source_from_note_url(self, note_url):
+        """Re-read a Xiaohongshu note and return its first usable cover URL."""
+        clean_url = str(note_url or "").strip()
+        if not clean_url:
+            return ""
+        if not self.is_xiaohongshu_url(clean_url):
+            return ""
+
+        try:
+            from local_extractor import XiaohongshuExtractor
+
+            self.wait_for_xhs_request(self.xhs_fetch_min_interval)
+            extracted = XiaohongshuExtractor().extract_from_url(clean_url)
+        except Exception as exc:
+            raise NotionManagerError(f"重新提取封面失败: {exc}") from exc
+
+        candidates = []
+        cover_url = extracted.get("cover_url") if isinstance(extracted, dict) else ""
+        if cover_url:
+            candidates.append(cover_url)
+        if isinstance(extracted, dict):
+            candidates.extend(extracted.get("image_urls") or [])
+
+        for candidate in candidates:
+            source_url = str(candidate or "").strip()
+            if source_url:
+                return source_url
+        return ""
+
+    def remember_cover_source(self, page_id, source_url):
+        """Best-effort writeback so future repairs do not need to re-scrape."""
+        clean_url = str(source_url or "").strip()
+        if not clean_url:
+            return False
+        try:
+            self.patch_page_properties(page_id, {COVER_URL_PROP: {"url": clean_url}})
+        except Exception:
+            return False
+        return True
 
     @staticmethod
     def is_xiaohongshu_url(url):
@@ -1084,6 +1200,124 @@ class NotionNoteManager:
         self.material_source_context = context
         return context
 
+    def get_material_query_url(self):
+        context = self.get_material_source_context()
+        parent = context.get("parent") or {}
+        if parent.get("type") == "data_source_id":
+            return f"https://api.notion.com/v1/data_sources/{parent['data_source_id']}/query"
+        return f"https://api.notion.com/v1/databases/{self.material_database_id}/query"
+
+    def query_photo_materials(self, filters):
+        limit = min(max(int(filters.get("limit") or 48), 1), 100)
+        cursor = (filters.get("cursor") or "").strip() or None
+        search_text = _normalize(filters.get("q"))
+        tag_filter = _normalize(filters.get("tag"))
+        status_filter = _normalize(filters.get("status"))
+
+        payload = {
+            "page_size": limit,
+            "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+        }
+        if cursor:
+            payload["start_cursor"] = cursor
+
+        data = self.request("POST", self.get_material_query_url(), json=payload)
+        materials = []
+        tag_counts = {}
+        for page in data.get("results", []):
+            material = self.page_to_photo_material(page)
+            searchable = _normalize(
+                " ".join([
+                    material.get("title", ""),
+                    material.get("source_title", ""),
+                    material.get("author", ""),
+                    " ".join(material.get("all_tags", [])),
+                    material.get("learning_note", ""),
+                    material.get("remake_hint", ""),
+                ])
+            )
+            status_text = _normalize(material.get("status"))
+            tag_text = _normalize(" ".join(material.get("all_tags", [])))
+            if search_text and search_text not in searchable:
+                continue
+            if status_filter and status_filter != status_text:
+                continue
+            if tag_filter and tag_filter not in tag_text:
+                continue
+            materials.append(material)
+            for tag in material.get("all_tags", []):
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+        facets = [
+            {"name": name, "count": count}
+            for name, count in sorted(
+                tag_counts.items(),
+                key=lambda item: (-item[1], item[0].casefold()),
+            )
+        ][:80]
+        return {
+            "ok": True,
+            "materials": materials,
+            "facets": {"tags": facets},
+            "has_more": bool(data.get("has_more")),
+            "next_cursor": data.get("next_cursor"),
+            "limit": limit,
+        }
+
+    def page_to_photo_material(self, page):
+        props = page.get("properties", {})
+        title = read_title(props.get(MATERIAL_TITLE_PROP, {}))
+        image_url = read_first_file_url(props.get(MATERIAL_IMAGE_PROP, {})) or read_url(
+            props.get(MATERIAL_IMAGE_URL_PROP, {})
+        )
+        tag_groups = {
+            "composition": read_multi_select(props.get(MATERIAL_COMPOSITION_PROP, {})),
+            "color": read_multi_select(props.get(MATERIAL_COLOR_PROP, {})),
+            "action": read_multi_select(props.get(MATERIAL_ACTION_PROP, {})),
+            "clothing": read_multi_select(props.get(MATERIAL_CLOTHING_PROP, {})),
+            "mood": read_multi_select(props.get(MATERIAL_MOOD_PROP, {})),
+            "people": read_multi_select(props.get(MATERIAL_PEOPLE_PROP, {})),
+            "light": read_multi_select(props.get(MATERIAL_LIGHT_PROP, {})),
+            "scene": read_multi_select(props.get(MATERIAL_SCENE_PROP, {})),
+            "time": read_multi_select(props.get(MATERIAL_TIME_PROP, {})),
+            "weather": read_multi_select(props.get(MATERIAL_WEATHER_PROP, {})),
+            "angle": read_multi_select(props.get(MATERIAL_ANGLE_PROP, {})),
+            "focal_length": read_multi_select(props.get(MATERIAL_FOCAL_LENGTH_PROP, {})),
+            "shot": read_multi_select(props.get(MATERIAL_SHOT_PROP, {})),
+            "custom": read_multi_select(props.get(MATERIAL_CUSTOM_TAGS_PROP, {})),
+        }
+        all_tags = []
+        seen_tags = set()
+        for tags in tag_groups.values():
+            for tag in tags:
+                key = tag.casefold()
+                if key in seen_tags:
+                    continue
+                seen_tags.add(key)
+                all_tags.append(tag)
+
+        return {
+            "id": page.get("id", ""),
+            "url": page.get("url", ""),
+            "title": title or "未命名素材",
+            "image_url": image_url,
+            "image_link": read_url(props.get(MATERIAL_IMAGE_URL_PROP, {})),
+            "source_url": read_url(props.get(MATERIAL_SOURCE_URL_PROP, {})),
+            "source_title": read_rich_text(props.get(MATERIAL_SOURCE_TITLE_PROP, {})),
+            "source_note_ids": read_relation_ids(props.get(MATERIAL_SOURCE_NOTE_PROP, {})),
+            "author": read_rich_text(props.get(MATERIAL_AUTHOR_PROP, {})),
+            "status": read_status(props.get(MATERIAL_STATUS_PROP, {})),
+            "rating": read_number(props.get(MATERIAL_RATING_PROP, {})),
+            "image_index": read_number(props.get(MATERIAL_IMAGE_INDEX_PROP, {})),
+            "remake_ready": read_checkbox(props.get(MATERIAL_REMAKE_READY_PROP, {})),
+            "learning_note": read_rich_text(props.get(MATERIAL_LEARNING_PROP, {})),
+            "remake_hint": read_rich_text(props.get(MATERIAL_REMAKE_PROP, {})),
+            "tags": tag_groups,
+            "all_tags": all_tags,
+            "created_time": page.get("created_time", ""),
+            "last_edited_time": page.get("last_edited_time", ""),
+        }
+
     def create_photo_materials(self, payload):
         page_id = str(payload.get("page_id") or "").strip()
         raw_items = payload.get("items") or []
@@ -1151,7 +1385,7 @@ class NotionNoteManager:
 
         title = (
             str(raw_item.get("title") or "").strip()
-            or f"{source_note.get('title') or '摄影素材'} #{image_index or len(source_url)}"
+            or f"{_material_title_base(source_note.get('title'))} #{image_index or len(source_url)}"
         )
         page_properties = {
             context["title_property"]: title_payload(title),
@@ -1790,6 +2024,7 @@ class NotionNoteManager:
                 page = self.get_page(page_id)
                 props = page.get("properties", {})
                 source_url = read_url(props.get(COVER_URL_PROP, {}))
+                should_remember_source = False
                 cached_asset = self.cover_store.get_asset_for_page(page_id)
 
                 if cached_asset:
@@ -1805,9 +2040,15 @@ class NotionNoteManager:
                         if not source_url:
                             source_urls = cached_asset.get("source_urls") or []
                             source_url = source_urls[-1] if source_urls else ""
+                            should_remember_source = bool(source_url)
 
                 if not source_url:
                     source_url = read_cover_url(page)
+                if not source_url:
+                    source_url = self.extract_cover_source_from_note_url(
+                        read_url(props.get(URL_PROP, {}))
+                    )
+                    should_remember_source = bool(source_url)
                 if not source_url:
                     raise NotionManagerError("没有可用于修复的封面来源。")
                 self.cover_service.cache_upload_and_attach(
@@ -1816,6 +2057,8 @@ class NotionNoteManager:
                     force_cache=True,
                     force_upload=True,
                 )
+                if should_remember_source:
+                    self.remember_cover_source(page_id, source_url)
                 updated += 1
             except Exception as exc:
                 failures.append({"page_id": page_id, "error": str(exc)})

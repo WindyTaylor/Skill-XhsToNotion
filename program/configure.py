@@ -43,7 +43,7 @@ def main():
     config = {}
     if config_path.exists():
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 config = json.load(f)
         except Exception as e:
             print(f"[WARN] 无法读取现有 config.json，将创建新文件。错误: {e}")

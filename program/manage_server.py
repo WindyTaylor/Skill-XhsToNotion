@@ -2,8 +2,11 @@
 """Local web server for the Xiaohongshu Notion note management console."""
 
 import argparse
+import base64
+import hmac
 import json
 import mimetypes
+import os
 import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +21,42 @@ HOST = "127.0.0.1"
 PORT = 8765
 PROGRAM_DIR = Path(__file__).parent
 WEB_DIR = PROGRAM_DIR / "web"
+CONFIG_FILE = PROGRAM_DIR / "config.json"
+AUTH_REALM = "xhs-notion-console"
+AUTH_EXEMPT_PATHS = {
+    "/api/health",
+    "/icon.svg",
+    "/manifest.webmanifest",
+}
+
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+
+
+def load_server_config():
+    if not CONFIG_FILE.exists():
+        return {}
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_auth_config():
+    file_config = load_server_config()
+    username = (
+        os.getenv("ADMIN_USERNAME")
+        or file_config.get("ADMIN_USERNAME")
+        or "admin"
+    )
+    password = os.getenv("ADMIN_PASSWORD") or file_config.get("ADMIN_PASSWORD") or ""
+    return {
+        "enabled": bool(str(password).strip()),
+        "username": str(username or "admin"),
+        "password": str(password),
+    }
 
 
 def parse_query(path):
@@ -39,8 +78,15 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
     def manager(self):
         return self.server.manager
 
+    @property
+    def auth_config(self):
+        return self.server.auth_config
+
     def do_GET(self):
         path, query = parse_query(self.path)
+        if not self.is_authorized(path):
+            self.request_auth()
+            return
         if path == "/api/health":
             self.write_json({"ok": True, "service": "xhs-notion-management-console"})
             return
@@ -62,6 +108,9 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
                 )
             )
             return
+        if path == "/api/materials/photo":
+            self.handle_api(lambda: self.manager.query_photo_materials(query))
+            return
         if path == "/api/debug/cover":
             try:
                 limit = int(query.get("limit", "3"))
@@ -76,6 +125,9 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path, _ = parse_query(self.path)
+        if not self.is_authorized(path):
+            self.request_auth()
+            return
         if path == "/api/albums":
             body = self.read_json_body()
             action = body.get("action", "")
@@ -102,7 +154,9 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         if path == "/api/albums/order":
             body = self.read_json_body()
             self.handle_api(
-                lambda: self.manager.update_album_order(body.get("album_ids", []))
+                lambda: self.manager.update_album_order(
+                    body.get("album_ids") or body.get("album_names", [])
+                )
             )
             return
         if path == "/api/notes/batch":
@@ -143,6 +197,57 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
             self.handle_api(lambda: self.manager.create_photo_materials(self.read_json_body()))
             return
         self.write_json({"ok": False, "error": "接口不存在。"}, status=HTTPStatus.NOT_FOUND)
+
+    def is_authorized(self, path):
+        auth = self.auth_config
+        if path in AUTH_EXEMPT_PATHS:
+            return True
+        if not auth.get("enabled"):
+            return self.is_local_request()
+
+        header = self.headers.get("Authorization", "")
+        scheme, _, credentials = header.partition(" ")
+        if scheme.lower() != "basic" or not credentials:
+            return False
+
+        try:
+            decoded = base64.b64decode(credentials, validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        username, separator, password = decoded.partition(":")
+        if not separator:
+            return False
+
+        return (
+            hmac.compare_digest(username, auth.get("username", ""))
+            and hmac.compare_digest(password, auth.get("password", ""))
+        )
+
+    def is_local_request(self):
+        host = self.headers.get("Host", "").split(":", 1)[0].strip().lower()
+        return host in {"127.0.0.1", "localhost", "::1"} or host.endswith(".localhost")
+
+    def request_auth(self):
+        auth_enabled = self.auth_config.get("enabled")
+        status = HTTPStatus.UNAUTHORIZED if auth_enabled else HTTPStatus.FORBIDDEN
+        error = (
+            "需要登录后访问管理台。"
+            if auth_enabled
+            else "公网或局域网访问前必须先设置 ADMIN_PASSWORD。"
+        )
+        body = json.dumps(
+            {"ok": False, "error": error},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        self.send_response(status)
+        if auth_enabled:
+            self.send_header("WWW-Authenticate", f'Basic realm="{AUTH_REALM}", charset="UTF-8"')
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Vary", "Authorization")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def handle_api(self, callback):
         try:
@@ -227,6 +332,7 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
 class ManagementConsoleServer(ThreadingHTTPServer):
     def __init__(self, server_address, request_handler_class):
         super().__init__(server_address, request_handler_class)
+        self.auth_config = load_auth_config()
         self.manager = NotionNoteManager()
 
 
@@ -241,6 +347,10 @@ def main():
 
     server = ManagementConsoleServer((args.host, args.port), ManagementConsoleHandler)
     url = f"http://{args.host}:{args.port}"
+    if server.auth_config.get("enabled"):
+        print(f"[OK] 管理台访问保护已启用，登录用户：{server.auth_config.get('username')}")
+    else:
+        print("[WARN] 管理台未启用访问保护。公网 Tunnel 前请设置 ADMIN_PASSWORD。")
     print(f"[OK] 小红书收藏管理台已启动: {url}")
     print("[INFO] 在 Notion 页面中使用 /embed 嵌入该地址；停止服务请按 Ctrl+C。")
     try:

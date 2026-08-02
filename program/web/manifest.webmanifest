@@ -1,0 +1,19 @@
+{
+  "name": "小红书 Notion 管理台",
+  "short_name": "小红书管理",
+  "description": "移动端优先的小红书/Notion 收藏管理台",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#d84a5f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
