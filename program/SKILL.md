@@ -15,6 +15,7 @@ metadata: {"clawdbot":{"emoji":"📱→📝","requires":{"env":["NOTION_API_KEY"
 - 用户要求给最近保存的小红书笔记追加野生标签。
 - 用户要求把最近保存的小红书笔记更新到指定专辑。
 - 用户要求描述、补充、修改某个专辑的用途或收录范围，供后续 LLM 专辑推理参考。
+- 用户要求新建 Notion 专辑（两步交互：先选领域，再确认创建）。
 - 用户要求刷新 Notion 专辑映射。
 - 用户要求打开或启动小红书收藏管理台，用于搜索、过滤、滚动加载、多选笔记、批量整理、维护 AI 专辑语义说明、摄影拆图素材沉淀，或将笔记移入 Notion 回收站。
 
@@ -52,18 +53,28 @@ python xiaohongshu_to_notion_cli.py `
 ## QQ 卡片链接规则
 
 - OpenClaw 收到小红书 QQ 卡片时，`jump_url` 才是要传给 CLI 的 URL。
-- 不要把 `jump_url` 清洗成裸链接；保留全部 query 参数，尤其是 `xsec_token`、`xsec_source`、`share_id`、`share_channel`、`xhsshare`。
+- 不要把 `jump_url` 清洗成裸链接；保留全部 query 参数，尤其是 `xsec_token`、`xsec_source`、`share_id`、`share_channel`、`xhsshare`、`code`。
 - 不要因为 URL 很长就截断；PowerShell 命令里用双引号包住完整 URL。
-- `title`、`desc`、`tag` 是 QQ 卡片预览字段，可能被省略号截断。它们只能在页面抓取失败时作为部分兜底信息，不代表完整页面内容。
-- 如果页面抓取失败但卡片字段可见，可以再次用完整 `jump_url` 加可见字段保存部分信息：
+- `title`、`desc`、`tag` 是 QQ 卡片预览字段，可能被省略号截断。它们只能作为辅助兜底，不代表完整页面内容，也不能替代封面。
+- 如果页面抓取失败但卡片字段可见，只有在能同时提供封面图片 URL 时，才可以再次用完整 `jump_url` 加可见字段保存；否则不要创建 Notion 笔记，直接告知用户需要完整可访问的 `jump_url` 或封面 URL：
 
 ```powershell
 python xiaohongshu_to_notion_cli.py `
   --url "<完整 jump_url>" `
   --title "<QQ 卡片 title>" `
   --summary "<QQ 卡片 desc>" `
-  --tags "<QQ 卡片可见标签>"
+  --tags "<QQ 卡片可见标签>" `
+  --cover "<QQ 卡片封面图片 URL>"
 ```
+
+- 如果 CLI 输出 `[FAIL] 未获取到封面`，必须停止本次保存，不要改用标题、简介、标签创建无封面笔记。
+- 如果 CLI 同时提示“已暂存这条笔记”，后续用户直接发送一张图片，且 QQBot 消息里有 `attachments`/`localPath` 指向本地图片文件，必须把该图片作为封面继续保存暂存笔记：
+
+```powershell
+python xiaohongshu_to_notion_cli.py --save-pending-cover --cover-file "<attachments[0].localPath>"
+```
+
+- 图片补封面流程只用于最近一次因缺封面暂存的小红书笔记；不要把图片当作新的小红书链接处理。
 
 ## 回复要求
 
@@ -100,7 +111,50 @@ python xiaohongshu_to_notion_cli.py --select-album-candidate 2
 python xiaohongshu_to_notion_cli.py --describe-album "积累拍照灵感" --album-description "用于收集拍摄主题、画面构思、姿势、场景、风格参考和可复刻的出片灵感。"
 ```
 
-当用户在聊天框里说“把某某专辑描述为……”“某某专辑主要用于……”“以后某某专辑收录……”时，调用 `--describe-album` 和 `--album-description`。不要把这类请求当作保存小红书笔记。
+当用户在聊天框里说"把某某专辑描述为……""某某专辑主要用于……""以后某某专辑收录……"时，调用 `--describe-album` 和 `--album-description`。不要把这类请求当作保存小红书笔记。
+
+## 新建 Notion 专辑（两步交互）
+
+当用户说"建一个名为 XX 的专辑""新建专辑 XX""创建专辑 XX"等意图时，使用两步交互流程：
+
+**第一步**：询问领域。调用 CLI 列出六大主领域供用户选择：
+
+```powershell
+python xiaohongshu_to_notion_cli.py --create-album "AAB"
+```
+
+CLI 会输出带编号的领域列表，用户回复数字 1-6。
+
+**第二步**：确认创建。用户回复数字后，带上领域编号调用：
+
+```powershell
+python xiaohongshu_to_notion_cli.py --create-album "AAB" --domain-number 3
+```
+
+六大主领域对应关系：
+
+| 编号 | 主领域 |
+|------|--------|
+| 1 | 🛠️ 硬核技术与职业效能 |
+| 2 | 📸 视觉叙事与影像实验室 |
+| 3 | 🦾 生活百科与生存技能 |
+| 4 | 🌿 身心重塑与自我管理 |
+| 5 | 📍 地理图志与探店计划 |
+| 6 | 🎭 奇趣碎片与小众文化 |
+
+单独查看领域列表（可选）：
+
+```powershell
+python xiaohongshu_to_notion_cli.py --list-domains
+```
+
+创建成功后 CLI 会自动更新 `album_map.json`、`album_domains.json` 和 `album_order.json`，无需手动运行 `update_album_map.py`。
+
+**交互示例**：
+- 用户："帮我建个名为「AI绘画灵感」的专辑"
+- 助手：调用 `--create-album "AI绘画灵感"` → 输出 6 个领域让用户选
+- 用户："2"
+- 助手：调用 `--create-album "AI绘画灵感" --domain-number 2` → 创建成功
 
 刷新专辑映射：
 

@@ -12,7 +12,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon.svg" />
-    <link rel="stylesheet" href="/styles.css?v=20260802-material-bg-bridge" />
+    <link rel="stylesheet" href="/styles.css?v=20260804-image-paste" />
   </head>
   <body>
     <div id="backgroundLayer" class="background-layer" aria-hidden="true"></div>
@@ -454,6 +454,16 @@
             <span id="imagePickerMeta">尚未加载图片</span>
             <button id="imagePickerRefresh" class="secondary-button" type="button">重新提取图片</button>
           </div>
+          <div
+            id="imagePasteZone"
+            class="image-paste-zone"
+            role="button"
+            tabindex="0"
+            aria-label="点击后按 Ctrl+V 粘贴剪切板图片"
+          >
+            <strong>粘贴图片</strong>
+            <span>点击这里后按 Ctrl+V，可把剪切板图片加入拆图列表</span>
+          </div>
           <div id="imagePickerGrid" class="image-picker-grid"></div>
         </div>
         <form id="imageMaterialForm" class="image-material-form">
@@ -555,6 +565,6 @@
       </div>
     </section>
 
-    <script src="/app.js?v=20260802-material-bg-bridge"></script>
+    <script src="/app.js?v=20260804-image-paste"></script>
   </body>
 </html>

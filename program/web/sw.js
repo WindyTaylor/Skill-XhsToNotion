@@ -1,4 +1,4 @@
-const STATIC_CACHE = "xhs-notion-console-v3";
+const STATIC_CACHE = "xhs-notion-console-v7";
 const STATIC_ASSETS = [
   "/",
   "/styles.css",

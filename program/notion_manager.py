@@ -7,7 +7,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit, urlparse
 
 import requests
 
@@ -16,8 +16,14 @@ from cover_assets import (
     CoverAssetService,
     CoverAssetStore,
     NotionFileUploader,
+    notion_external_file_url,
     notion_file_upload_version_from_config,
 )
+
+# Serializes cover-cache index writes across background workers and the
+# synchronous refresh endpoint so the JSON index is never clobbered by
+# concurrent read-modify-write cycles.
+_COVER_CACHE_LOCK = threading.Lock()
 
 try:
     import urllib3
@@ -179,6 +185,10 @@ def _material_title_base(value):
     if len(text) > MAX_MATERIAL_TITLE_BASE_LENGTH:
         return f"{text[:MAX_MATERIAL_TITLE_BASE_LENGTH].rstrip()}..."
     return text
+
+
+def _is_data_image_url(value):
+    return str(value or "").strip().lower().startswith("data:image/")
 
 
 def split_filter_terms(value):
@@ -963,6 +973,163 @@ class NotionNoteManager:
         except CoverAssetError as exc:
             raise NotionManagerError(str(exc)) from exc
 
+    @staticmethod
+    def _unwrap_proxy_url(url: str) -> str:
+        """Extract the real image URL from proxy services like weserv.nl.
+
+        weserv.nl wraps the target in a ``?url=<url-encoded>`` query parameter.
+        Returns the unwrapped URL if the pattern matches, otherwise the original.
+        """
+        if not url:
+            return url
+        parsed = urlparse(url)
+        if "weserv" in parsed.netloc and "url=" in parsed.query:
+            params = parse_qs(parsed.query)
+            raw = params.get("url", [""])[0]
+            if raw:
+                return raw
+        return url
+
+    def background_cache_cover(self, note):
+        """Best-effort background cache of a note's cover.
+
+        Notion's file-type covers are served from S3 with a signed URL that
+        expires after one hour. To keep the gallery stable we download the
+        cover once and serve it from the local ``/covers/`` route on later
+        loads. This runs in a daemon thread so it never delays the query
+        response; the current response still uses the (still-valid) S3 URL.
+
+        For notes whose cover is a dead proxy URL (e.g. weserv.nl), this
+        falls back to re-extracting from the original Xiaohongshu page.
+
+        For notes that have **no cover at all** in Notion but do have a
+        Xiaohongshu URL, this also attempts a best-effort re-extraction so
+        the gallery card is not permanently stuck on \"无封面\".
+        """
+        page_id = note.get("id")
+        if not page_id or note.get("cover_local"):
+            return
+
+        notion_url = self._unwrap_proxy_url(note.get("cover_notion") or "")
+        source_url = self._unwrap_proxy_url(note.get("cover_source") or "")
+
+        is_broken_proxy = self._is_broken_proxy_url(notion_url) if notion_url else False
+        xhs_url = note.get("url", "")
+        has_notion_cover = bool(notion_url) and not is_broken_proxy
+
+        def worker():
+            # Step 1: try caching the Notion cover directly (unless known-broken or absent)
+            if has_notion_cover:
+                try:
+                    with _COVER_CACHE_LOCK:
+                        self.cover_service.cache_cover(notion_url, page_id=page_id)
+                    return  # success
+                except CoverAssetError:
+                    pass
+
+                # S3 signed URL may have expired; try fetching a fresh one
+                try:
+                    fresh = self.fetch_cover_for_page(page_id)
+                except NotionAPIError:
+                    fresh = ""
+                if fresh and fresh != notion_url:
+                    fresh_unwrapped = self._unwrap_proxy_url(fresh)
+                    if fresh_unwrapped and not self._is_broken_proxy_url(fresh_unwrapped):
+                        try:
+                            with _COVER_CACHE_LOCK:
+                                self.cover_service.cache_cover(fresh_unwrapped, page_id=page_id)
+                            return
+                        except CoverAssetError:
+                            pass
+
+            # Step 2: if the page has a saved source URL but no Notion cover yet,
+            # attach it in the background so the next load has a real page cover.
+            if source_url:
+                try:
+                    with _COVER_CACHE_LOCK:
+                        self.cover_service.cache_upload_and_attach(source_url, page_id=page_id)
+                    return
+                except CoverAssetError:
+                    try:
+                        self.cover_service.uploader.set_page_cover_external(
+                            page_id,
+                            notion_external_file_url(source_url),
+                        )
+                        return
+                    except CoverAssetError:
+                        pass
+
+            # Step 3: re-extract from Xiaohongshu (for broken proxies, missing covers, & exhausted retries)
+            if not xhs_url or not self.is_xiaohongshu_url(xhs_url):
+                return
+            try:
+                extracted = self.extract_cover_source_from_note_url(xhs_url)
+                if extracted:
+                    with _COVER_CACHE_LOCK:
+                        self.cover_service.cache_cover(extracted, page_id=page_id)
+                    # Remember for faster future repairs
+                    self.remember_cover_source(page_id, extracted)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def refresh_cover_local(self, page_id):
+        """Synchronously ensure a local cached cover exists and return its URL.
+
+        Used by the frontend to repair a cover whose S3 URL has already
+        expired: it re-reads a fresh cover from Notion, caches it locally, and
+        returns the permanent ``/covers/`` URL so the card can reload.
+        Returns an empty string when no cover can be obtained.
+        """
+        page_id = (page_id or "").strip()
+        if not page_id:
+            return ""
+        existing = self.cover_store.get_local_url_for_page(page_id)
+        if existing:
+            return existing
+        try:
+            page = self.get_page(page_id)
+        except NotionAPIError:
+            return ""
+
+        # Step 1: try the Notion page cover (unwrapping known proxies)
+        notion_url = self._unwrap_proxy_url(read_cover_url(page))
+        if notion_url and not self._is_broken_proxy_url(notion_url):
+            try:
+                with _COVER_CACHE_LOCK:
+                    self.cover_service.cache_cover(notion_url, page_id=page_id)
+                result = self.cover_store.get_local_url_for_page(page_id)
+                if result:
+                    return result
+            except CoverAssetError:
+                pass
+
+        # Step 2: re-extract from the original Xiaohongshu page
+        xhs_url = read_url(page.get("properties", {}).get(URL_PROP, {}))
+        if xhs_url:
+            try:
+                extracted = self.extract_cover_source_from_note_url(xhs_url)
+                if extracted:
+                    with _COVER_CACHE_LOCK:
+                        self.cover_service.cache_cover(extracted, page_id=page_id)
+                    result = self.cover_store.get_local_url_for_page(page_id)
+                    if result:
+                        # Remember the good source so future repairs are faster
+                        self.remember_cover_source(page_id, extracted)
+                        return result
+            except Exception:
+                pass
+
+        return ""
+
+    @staticmethod
+    def _is_broken_proxy_url(url: str) -> bool:
+        """Check if a URL points to a known-dead or unreliable image proxy."""
+        if not url:
+            return False
+        return any(domain in url for domain in ("weserv.nl", "weserv.com"))
+
     def extract_cover_source_from_note_url(self, note_url):
         """Re-read a Xiaohongshu note and return its first usable cover URL."""
         clean_url = str(note_url or "").strip()
@@ -1264,6 +1431,58 @@ class NotionNoteManager:
             "limit": limit,
         }
 
+    # Tag group key → Notion property name
+    MATERIAL_TAG_PROP_MAP = {
+        "composition": MATERIAL_COMPOSITION_PROP,
+        "color": MATERIAL_COLOR_PROP,
+        "action": MATERIAL_ACTION_PROP,
+        "clothing": MATERIAL_CLOTHING_PROP,
+        "mood": MATERIAL_MOOD_PROP,
+        "people": MATERIAL_PEOPLE_PROP,
+        "light": MATERIAL_LIGHT_PROP,
+        "scene": MATERIAL_SCENE_PROP,
+        "time": MATERIAL_TIME_PROP,
+        "weather": MATERIAL_WEATHER_PROP,
+        "angle": MATERIAL_ANGLE_PROP,
+        "focal_length": MATERIAL_FOCAL_LENGTH_PROP,
+        "shot": MATERIAL_SHOT_PROP,
+        "custom": MATERIAL_CUSTOM_TAGS_PROP,
+    }
+
+    def update_photo_material_tag(self, page_id="", tag_group="", tag_value="", action="remove"):
+        """Add or remove a single tag from a photo material page."""
+        page_id = str(page_id or "").strip()
+        tag_group = str(tag_group or "").strip().lower()
+        tag_value = str(tag_value or "").strip()
+        if not page_id:
+            raise NotionManagerError("缺少页面 ID。")
+        if not tag_group or tag_group not in self.MATERIAL_TAG_PROP_MAP:
+            raise NotionManagerError(f"无效的标签组: {tag_group}")
+        if not tag_value:
+            raise NotionManagerError("标签值不能为空。")
+
+        prop_name = self.MATERIAL_TAG_PROP_MAP[tag_group]
+
+        # Fetch current page to get existing tags
+        page = self.request("GET", f"https://api.notion.com/v1/pages/{page_id}")
+        props = page.get("properties", {})
+        current_tags = read_multi_select(props.get(prop_name, {}))
+
+        if action == "remove":
+            new_tags = [t for t in current_tags if t != tag_value]
+            if len(new_tags) == len(current_tags):
+                return {"ok": True, "message": "标签未变化（可能已不存在）。"}
+        else:  # add
+            if tag_value in current_tags:
+                return {"ok": True, "message": "标签已存在。"}
+            new_tags = current_tags + [tag_value]
+
+        # Patch the page
+        self.patch_page_properties(page_id, {
+            prop_name: [{"name": t} for t in new_tags],
+        })
+        return {"ok": True, "message": f"已{'删除' if action == 'remove' else '添加'}标签。"}
+
     def page_to_photo_material(self, page):
         props = page.get("properties", {})
         title = read_title(props.get(MATERIAL_TITLE_PROP, {}))
@@ -1372,12 +1591,15 @@ class NotionNoteManager:
             source_url = source_urls[-1] if source_urls else ""
         if not source_url:
             raise NotionManagerError("图片缺少来源 URL。")
+        is_embedded_image = _is_data_image_url(source_url)
 
         asset_response = self.cover_service.cache_cover(source_url, page_id=source_note.get("id", ""))
         if not asset_id:
             asset_id = asset_response.get("id") or ""
 
         upload_to_notion = _as_bool(raw_item.get("upload_to_notion"), default=True)
+        if is_embedded_image:
+            upload_to_notion = True
         file_upload_id = ""
         if upload_to_notion and asset_id:
             uploaded = self.cover_service.upload_cached_asset(asset_id)
@@ -1424,7 +1646,7 @@ class NotionNoteManager:
             if tags:
                 set_select(name, tags[0])
 
-        set_url(MATERIAL_IMAGE_URL_PROP, source_url)
+        set_url(MATERIAL_IMAGE_URL_PROP, "" if is_embedded_image else source_url)
         set_url(MATERIAL_SOURCE_URL_PROP, source_note.get("url"))
         set_rich_text(MATERIAL_SOURCE_TITLE_PROP, source_note.get("title"))
         set_rich_text(MATERIAL_AUTHOR_PROP, source_note.get("author"))
@@ -1477,7 +1699,7 @@ class NotionNoteManager:
                         }
                     ]
                 }
-            else:
+            elif not is_embedded_image:
                 page_properties[MATERIAL_IMAGE_PROP] = {
                     "files": [
                         {
@@ -1493,7 +1715,12 @@ class NotionNoteManager:
             if file_upload_id
             else {"type": "external", "external": {"url": source_url}}
         )
-        children = self._build_photo_material_children(source_note, raw_item, source_url)
+        children = self._build_photo_material_children(
+            source_note,
+            raw_item,
+            "" if is_embedded_image else source_url,
+            file_upload_id=file_upload_id,
+        )
         page = self.request(
             "POST",
             "https://api.notion.com/v1/pages",
@@ -1508,11 +1735,11 @@ class NotionNoteManager:
             "id": page.get("id", ""),
             "url": page.get("url", ""),
             "title": title,
-            "source_url": source_url,
+            "source_url": "" if is_embedded_image else source_url,
             "index": image_index,
         }
 
-    def _build_photo_material_children(self, source_note, raw_item, source_url):
+    def _build_photo_material_children(self, source_note, raw_item, source_url, file_upload_id=""):
         lines = [
             ("来源笔记", source_note.get("title")),
             ("作者", source_note.get("author")),
@@ -1533,16 +1760,25 @@ class NotionNoteManager:
             ("学习点", raw_item.get("learning_note")),
             ("复刻提示", raw_item.get("remake_hint")),
         ]
-        children = [
-            {
+        children = []
+        if file_upload_id:
+            children.append({
+                "object": "block",
+                "type": "image",
+                "image": {
+                    "type": "file_upload",
+                    "file_upload": {"id": file_upload_id},
+                },
+            })
+        elif source_url:
+            children.append({
                 "object": "block",
                 "type": "image",
                 "image": {
                     "type": "external",
                     "external": {"url": source_url},
                 },
-            }
-        ]
+            })
         for label, value in lines:
             text = str(value or "").strip()
             if not text:
@@ -1684,7 +1920,12 @@ class NotionNoteManager:
             for page in results:
                 note = self.page_to_note(page)
                 if not note.get("cover"):
-                    note["cover"] = self.fetch_cover_for_page(note["id"])
+                    fetched_cover = self.fetch_cover_for_page(note["id"])
+                    note["cover"] = fetched_cover
+                    note["cover_notion"] = fetched_cover
+                # Best-effort background cache so future loads use a stable
+                # local URL instead of Notion's expiring S3 signed URL.
+                self.background_cache_cover(note)
                 if self.matches_filters(note, filters):
                     notes.append(note)
                     if len(notes) >= limit:
@@ -1712,12 +1953,13 @@ class NotionNoteManager:
         page_id = page.get("id")
         notion_cover = read_cover_url(page)
         local_cover = self.cover_store.get_local_url_for_page(page_id)
+        cover_source = notion_external_file_url(read_url(props.get(COVER_URL_PROP, {})))
 
         return {
             "id": page_id,
             "title": read_title(props.get(TITLE_PROP, {})),
             "url": read_url(props.get(URL_PROP, {})),
-            "cover": local_cover or notion_cover,
+            "cover": local_cover or notion_cover or cover_source,
             "cover_local": local_cover,
             "cover_notion": notion_cover,
             "summary": read_rich_text(props.get(SUMMARY_PROP, {})),
@@ -1727,7 +1969,7 @@ class NotionNoteManager:
             "status": read_status(props.get(STATUS_PROP, {})),
             "albums": albums,
             "album_ids": album_ids,
-            "cover_source": read_url(props.get(COVER_URL_PROP, {})),
+            "cover_source": cover_source,
             "notion_url": page.get("url", ""),
             "created_time": page.get("created_time", ""),
             "last_edited_time": page.get("last_edited_time", ""),
@@ -1845,6 +2087,33 @@ class NotionNoteManager:
         skipped = 0
         failed = 0
         failures = []
+
+        if mode == "move":
+            relation_payload = {
+                ALBUM_PROP: {"relation": [{"id": target_album_id}]}
+            }
+            for page_id in page_ids:
+                try:
+                    self.patch_page_properties(page_id, relation_payload)
+                    updated += 1
+                except Exception as exc:  # Keep batch operations best-effort.
+                    failed += 1
+                    failures.append({"page_id": page_id, "error": str(exc)})
+
+            return {
+                "ok": failed == 0,
+                "action": "album",
+                "mode": mode,
+                "album_name": resolved_album_name,
+                "updated": updated,
+                "skipped": skipped,
+                "failed": failed,
+                "failures": failures,
+                "message": (
+                    f"\u5df2\u5c06 {updated} \u7bc7\u7b14\u8bb0\u79fb\u52a8\u5230\u300c{resolved_album_name}\u300d\uff0c"
+                    f"{skipped} \u7bc7\u65e0\u9700\u4fee\u6539\uff0c{failed} \u7bc7\u5931\u8d25\u3002"
+                ),
+            }
 
         for page_id in page_ids:
             try:
@@ -2051,12 +2320,23 @@ class NotionNoteManager:
                     should_remember_source = bool(source_url)
                 if not source_url:
                     raise NotionManagerError("没有可用于修复的封面来源。")
-                self.cover_service.cache_upload_and_attach(
-                    source_url,
-                    page_id,
-                    force_cache=True,
-                    force_upload=True,
-                )
+                try:
+                    self.cover_service.cache_upload_and_attach(
+                        source_url,
+                        page_id,
+                        force_cache=True,
+                        force_upload=True,
+                    )
+                except CoverAssetError as upload_exc:
+                    try:
+                        self.cover_service.uploader.set_page_cover_external(
+                            page_id,
+                            notion_external_file_url(source_url),
+                        )
+                    except CoverAssetError as fallback_exc:
+                        raise NotionManagerError(
+                            f"上传封面失败: {upload_exc}; 外链兜底失败: {fallback_exc}"
+                        ) from fallback_exc
                 if should_remember_source:
                     self.remember_cover_source(page_id, source_url)
                 updated += 1

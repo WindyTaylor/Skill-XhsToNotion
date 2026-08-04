@@ -3,14 +3,17 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import mimetypes
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import requests
 
@@ -27,6 +30,9 @@ DEFAULT_INDEX_FILE = DEFAULT_DATA_DIR / "cover_assets.json"
 DEFAULT_NOTION_FILE_UPLOAD_VERSION = "2026-03-11"
 DEFAULT_TIMEOUT = 30
 MAX_COVER_BYTES = 20 * 1024 * 1024
+INDEX_IO_ATTEMPTS = 8
+INDEX_IO_RETRY_SECONDS = 0.08
+INDEX_IO_LOCK = threading.RLock()
 
 IMAGE_EXTENSIONS = {
     "image/jpeg": ".jpg",
@@ -107,6 +113,43 @@ def notion_file_upload_version_from_config(config: Optional[Dict[str, Any]] = No
     )
 
 
+def notion_external_file_url(source_url: str) -> str:
+    """Normalize a source image URL for Notion external file objects."""
+    clean_url = str(source_url or "").strip()
+    if not clean_url:
+        return ""
+    parsed = urlparse(clean_url)
+    if parsed.scheme.lower() == "http":
+        return urlunparse(parsed._replace(scheme="https"))
+    return clean_url
+
+
+def parse_data_image_url(source_url: str) -> tuple[bytes, str] | None:
+    clean_url = str(source_url or "").strip()
+    if not clean_url.lower().startswith("data:image/"):
+        return None
+    header, separator, payload = clean_url.partition(",")
+    if not separator:
+        raise CoverAssetError("Invalid pasted image data URL.")
+    media_type = header[5:].split(";", 1)[0].strip().lower()
+    if not media_type.startswith("image/"):
+        raise CoverAssetError("Pasted data is not an image.")
+    try:
+        if ";base64" in header.lower():
+            content = base64.b64decode(payload, validate=True)
+        else:
+            from urllib.parse import unquote_to_bytes
+
+            content = unquote_to_bytes(payload)
+    except Exception as exc:
+        raise CoverAssetError("Could not decode pasted image data.") from exc
+    if not content:
+        raise CoverAssetError("Pasted image is empty.")
+    if len(content) > MAX_COVER_BYTES:
+        raise CoverAssetError("Pasted image is larger than 20 MB.")
+    return content, media_type
+
+
 class CoverAssetStore:
     """Local file cache with a JSON index for cross-process reuse."""
 
@@ -125,8 +168,24 @@ class CoverAssetStore:
     def load_index(self) -> Dict[str, Any]:
         if not self.index_file.exists():
             return {"version": 1, "assets": {}, "page_assets": {}, "source_assets": {}}
-        with open(self.index_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        last_error: PermissionError | None = None
+        for attempt in range(INDEX_IO_ATTEMPTS):
+            try:
+                with INDEX_IO_LOCK:
+                    with open(self.index_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                break
+            except PermissionError as exc:
+                last_error = exc
+                if attempt == INDEX_IO_ATTEMPTS - 1:
+                    raise CoverAssetError(
+                        f"Cover asset index is temporarily locked: {self.index_file}"
+                    ) from exc
+                time.sleep(INDEX_IO_RETRY_SECONDS * (attempt + 1))
+        else:
+            raise CoverAssetError(
+                f"Cover asset index is temporarily locked: {self.index_file}"
+            ) from last_error
         if not isinstance(data, dict):
             data = {}
         data.setdefault("version", 1)
@@ -136,10 +195,27 @@ class CoverAssetStore:
         return data
 
     def save_index(self, index: Dict[str, Any]) -> None:
-        tmp_path = self.index_file.with_suffix(self.index_file.suffix + ".tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(index, f, ensure_ascii=False, indent=2)
-        tmp_path.replace(self.index_file)
+        tmp_path = self.index_file.with_name(
+            f"{self.index_file.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        last_error: PermissionError | None = None
+        for attempt in range(INDEX_IO_ATTEMPTS):
+            try:
+                with INDEX_IO_LOCK:
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        json.dump(index, f, ensure_ascii=False, indent=2)
+                    tmp_path.replace(self.index_file)
+                return
+            except PermissionError as exc:
+                last_error = exc
+                if attempt == INDEX_IO_ATTEMPTS - 1:
+                    raise CoverAssetError(
+                        f"Cover asset index is temporarily locked: {self.index_file}"
+                    ) from exc
+                time.sleep(INDEX_IO_RETRY_SECONDS * (attempt + 1))
+        raise CoverAssetError(
+            f"Cover asset index is temporarily locked: {self.index_file}"
+        ) from last_error
 
     def local_url(self, asset: Dict[str, Any]) -> str:
         filename = asset.get("filename") or ""
@@ -171,11 +247,14 @@ class CoverAssetStore:
         if not asset:
             return ""
         try:
-            if not self.file_path_for_asset(asset).exists():
+            fpath = self.file_path_for_asset(asset)
+            if not fpath.exists():
                 return ""
+            mtime = int(fpath.stat().st_mtime)
         except (CoverAssetError, ValueError):
             return ""
-        return self.local_url(asset)
+        url = self.local_url(asset)
+        return f"{url}?v={mtime}" if url else ""
 
     def get_assets_for_page(self, page_id: str) -> list[Dict[str, Any]]:
         clean_id = clean_page_id(page_id)
@@ -254,6 +333,62 @@ class CoverAssetStore:
         asset["local_url"] = self.local_url(asset)
         return asset
 
+    def cache_from_file(
+        self,
+        source_path: Path | str,
+        page_id: str = "",
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        path = Path(source_path).expanduser()
+        if not path.exists() or not path.is_file():
+            raise CoverAssetError(f"Cover file does not exist: {path}")
+
+        size = path.stat().st_size
+        if size <= 0:
+            raise CoverAssetError("Cover file is empty.")
+        if size > MAX_COVER_BYTES:
+            raise CoverAssetError("Cover image is larger than 20 MB.")
+
+        content_type = (mimetypes.guess_type(path.name)[0] or "").split(";", 1)[0].strip()
+        if content_type and not content_type.lower().startswith("image/"):
+            raise CoverAssetError(f"Cover file is not an image: {content_type}")
+        if not content_type:
+            ext = path.suffix.lower()
+            if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+                raise CoverAssetError("Cover file type is not supported.")
+            content_type = mimetypes.types_map.get(".jpg" if ext == ".jpeg" else ext, "image/jpeg")
+
+        content = path.read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        ext = extension_for(content_type, path.name)
+        filename = f"{digest}{ext}"
+        file_path = self.cover_dir / filename
+        if force or not file_path.exists():
+            file_path.write_bytes(content)
+
+        index = self.load_index()
+        asset = index["assets"].get(digest, {})
+        asset.update(
+            {
+                "id": digest,
+                "filename": filename,
+                "relative_path": f"covers/{filename}",
+                "content_type": content_type,
+                "size": len(content),
+                "sha256": digest,
+                "updated_at": utc_now_iso(),
+            }
+        )
+        asset.setdefault("created_at", utc_now_iso())
+        asset.setdefault("source_urls", [])
+        asset.setdefault("page_ids", [])
+
+        index["assets"][digest] = asset
+        self._remember_relationships(index, asset, str(path.resolve()), page_id)
+        self.save_index(index)
+        asset["local_url"] = self.local_url(asset)
+        return asset
+
     def mark_uploaded(
         self,
         asset_id: str,
@@ -300,6 +435,10 @@ class CoverAssetStore:
                 page_ids.append(clean_id)
 
     def _download(self, source_url: str, timeout: int) -> tuple[bytes, str]:
+        data_image = parse_data_image_url(source_url)
+        if data_image:
+            return data_image
+
         try:
             response = requests.get(
                 source_url,
@@ -461,6 +600,10 @@ class CoverAssetService:
         asset = self.store.cache_from_url(source_url, page_id=page_id, force=force)
         return self._response(asset)
 
+    def cache_cover_file(self, source_path: Path | str, page_id: str = "", force: bool = False) -> Dict[str, Any]:
+        asset = self.store.cache_from_file(source_path, page_id=page_id, force=force)
+        return self._response(asset)
+
     def upload_cached_asset(
         self,
         asset_id: str,
@@ -496,6 +639,20 @@ class CoverAssetService:
         force_upload: bool = False,
     ) -> Dict[str, Any]:
         asset_response = self.cache_cover(source_url, page_id=page_id, force=force_cache)
+        return self.upload_cached_asset(
+            asset_response["id"],
+            page_id=page_id,
+            force_upload=force_upload,
+        )
+
+    def cache_file_upload_and_attach(
+        self,
+        source_path: Path | str,
+        page_id: str,
+        force_cache: bool = False,
+        force_upload: bool = False,
+    ) -> Dict[str, Any]:
+        asset_response = self.cache_cover_file(source_path, page_id=page_id, force=force_cache)
         return self.upload_cached_asset(
             asset_response["id"],
             page_id=page_id,

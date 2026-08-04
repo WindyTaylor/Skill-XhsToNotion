@@ -18,6 +18,7 @@ from cover_assets import (
     CoverAssetStore,
     NotionFileUploader,
     as_bool,
+    notion_external_file_url,
     notion_file_upload_version_from_config,
 )
 
@@ -51,11 +52,13 @@ except Exception as e:
 
 DEFAULT_ALBUM_NAMES = ("待分类收件箱", "未分类收件箱")
 CANDIDATE_FILE = Path(__file__).parent / "last_album_candidates.json"
+PENDING_COVER_FILE = Path(__file__).parent / "pending_cover_note.json"
 ALBUM_DESCRIPTIONS_FILE = Path(__file__).parent / "album_descriptions.json"
 MAX_ALBUM_CANDIDATES = 5
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 COLOR_TAGS_PROP = "彩色标签"
+COVER_URL_PROP = "封面"
 
 
 def normalize_tag_list(tags):
@@ -561,6 +564,31 @@ def read_album_candidates():
     with open(CANDIDATE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def write_pending_cover_note(data, note_id=""):
+    payload = {
+        "version": 1,
+        "note_id": note_id,
+        "data": data,
+    }
+    with open(PENDING_COVER_FILE, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+def read_pending_cover_note():
+    if not PENDING_COVER_FILE.exists():
+        return None
+    with open(PENDING_COVER_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def clear_pending_cover_note():
+    try:
+        PENDING_COVER_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+def extract_note_id(url):
+    match = re.search(r'/(?:item|explore)/([a-zA-Z0-9]{24})', str(url or ""))
+    return match.group(1) if match else None
+
 def print_album_candidates(candidates, selected_album):
     if not candidates:
         print("专辑候选: 未找到可用候选")
@@ -624,6 +652,7 @@ class NotionSaver:
         self.cover_upload_to_notion = True
         self.notion_api_key = None
         self.notion_database_id = None
+        self.notion_data_source_id = None
         config = {}
         
         # 优先尝试从本地 config.json 读取（因为 Agent 可以通过 configure.py 动态修改）
@@ -634,6 +663,7 @@ class NotionSaver:
                     config = json.load(f)
                     self.notion_api_key = config.get("NOTION_API_KEY")
                     self.notion_database_id = config.get("NOTION_DATABASE_ID")
+                    self.notion_data_source_id = config.get("NOTION_DATA_SOURCE_ID")
                     self.notion_version = config.get("NOTION_VERSION") or self.notion_version
                     self.notion_file_upload_version = notion_file_upload_version_from_config(config)
                     self.notion_timeout = int(config.get("NOTION_TIMEOUT") or self.notion_timeout)
@@ -654,6 +684,8 @@ class NotionSaver:
             self.notion_api_key = os.environ.get("NOTION_API_KEY")
         if not self.notion_database_id:
             self.notion_database_id = os.environ.get("NOTION_DATABASE_ID")
+        if not self.notion_data_source_id:
+            self.notion_data_source_id = os.environ.get("NOTION_DATA_SOURCE_ID")
         self.notion_version = os.environ.get("NOTION_VERSION") or self.notion_version
         self.notion_file_upload_version = (
             os.environ.get("NOTION_FILE_UPLOAD_VERSION") or self.notion_file_upload_version
@@ -692,7 +724,7 @@ class NotionSaver:
         return {
             "type": "external",
             "external": {
-                "url": cover_url
+                "url": notion_external_file_url(cover_url)
             }
         }
 
@@ -713,10 +745,30 @@ class NotionSaver:
             print(f"[WARN] Cover cache/upload failed: {exc}")
             if self.cover_upload_to_notion:
                 try:
-                    self.cover_service.uploader.set_page_cover_external(page_id, cover_url)
+                    self.cover_service.uploader.set_page_cover_external(
+                        page_id,
+                        notion_external_file_url(cover_url),
+                    )
                     print("[WARN] Fallback to external cover URL succeeded.")
                 except CoverAssetError as fallback_exc:
                     print(f"[WARN] Fallback external cover failed: {fallback_exc}")
+            return None
+
+    def persist_cover_file_for_page(self, page_id, cover_file):
+        cover_file = str(cover_file or "").strip()
+        if not page_id or not cover_file or not self.cover_cache_enabled:
+            return None
+
+        try:
+            if self.cover_upload_to_notion:
+                result = self.cover_service.cache_file_upload_and_attach(cover_file, page_id)
+                print(f"[OK] Local cover cached and uploaded: {result.get('filename', '')}")
+            else:
+                result = self.cover_service.cache_cover_file(cover_file, page_id=page_id)
+                print(f"[OK] Local cover cached: {result.get('local_url', '')}")
+            return result
+        except CoverAssetError as exc:
+            print(f"[WARN] Local cover cache/upload failed: {exc}")
             return None
 
     def persist_images_for_page(self, page_id, image_urls):
@@ -735,6 +787,31 @@ class NotionSaver:
             except CoverAssetError as exc:
                 print(f"[WARN] Image cache failed: {exc}")
         return cached
+
+    def query_url(self, headers):
+        """Return the query endpoint for the configured Notion API version."""
+        data_source_id = getattr(self, "notion_data_source_id", "") or ""
+        if data_source_id:
+            return f"https://api.notion.com/v1/data_sources/{data_source_id}/query"
+
+        if getattr(self, "notion_version", "") >= "2025-09-03":
+            import requests
+
+            response = requests.get(
+                f"https://api.notion.com/v1/databases/{self.notion_database_id}",
+                headers=headers,
+                verify=getattr(self, "verify_ssl", False),
+                timeout=15,
+            )
+            if response.status_code == 200:
+                data_sources = response.json().get("data_sources") or []
+                data_source_id = data_sources[0].get("id") if data_sources else ""
+                if data_source_id:
+                    self.notion_data_source_id = data_source_id
+                    return f"https://api.notion.com/v1/data_sources/{data_source_id}/query"
+            print(f"[WARN] 定位 Notion 数据源失败: {response.status_code} {response.text}")
+
+        return f"https://api.notion.com/v1/databases/{self.notion_database_id}/query"
 
     def check_duplicate(self, note_id):
         """检查Notion数据库中是否已存在该笔记"""
@@ -762,16 +839,22 @@ class NotionSaver:
         
         try:
             response = requests.post(
-                f"https://api.notion.com/v1/databases/{self.notion_database_id}/query",
+                self.query_url(headers),
                 headers=headers,
                 json=payload,
-                verify=False,
+                verify=getattr(self, "verify_ssl", False),
                 timeout=15
             )
             if response.status_code == 200:
                 results = response.json().get("results", [])
-                if results:
-                    return results[0].get("id")
+                for page in results:
+                    if page.get("archived") or page.get("in_trash"):
+                        continue
+                    page_id = page.get("id")
+                    if page_id:
+                        return page_id
+                return False
+            print(f"[WARN] 检查重复记录失败: {response.status_code} {response.text}")
             return False
         except Exception as e:
             print(f"[WARN] 检查重复记录失败: {e}")
@@ -866,9 +949,13 @@ class NotionSaver:
                 ]
             }
                 
-        # 添加封面图片
-        if data.get("cover") and not self.cover_upload_to_notion:
+        # 先用外链封面创建页面，后续上传成功后再替换成 Notion 托管文件。
+        # 这样即使缓存或 File Upload 失败，新页面也不会丢封面。
+        if data.get("cover"):
             page_data["cover"] = self.external_cover_payload(data.get("cover"))
+            page_data["properties"][COVER_URL_PROP] = {
+                "url": notion_external_file_url(data.get("cover"))
+            }
         
         import time
         import requests
@@ -887,6 +974,20 @@ class NotionSaver:
                     verify=self.verify_ssl,
                     timeout=self.notion_timeout
                 )
+
+                if response.status_code >= 400 and page_data.get("cover"):
+                    retry_page_data = dict(page_data)
+                    retry_page_data.pop("cover", None)
+                    retry_response = session.post(
+                        "https://api.notion.com/v1/pages",
+                        headers=headers,
+                        json=retry_page_data,
+                        verify=self.verify_ssl,
+                        timeout=self.notion_timeout
+                    )
+                    if retry_response.status_code == 200:
+                        print("[WARN] 初始外链封面被 Notion 拒绝，已先保存页面并继续尝试后置封面上传。")
+                        response = retry_response
                 
                 if response.status_code == 200:
                     result = response.json()
@@ -911,6 +1012,8 @@ class NotionSaver:
                     print_album_candidates(data.get("album_candidates", []), data.get("album"))
                     if data.get("cover"):
                         self.persist_cover_for_page(page_id, data.get("cover"))
+                    if data.get("cover_file"):
+                        self.persist_cover_file_for_page(page_id, data.get("cover_file"))
                     if data.get("image_urls"):
                         cached_images = self.persist_images_for_page(page_id, data.get("image_urls"))
                         print(f"   已缓存图片: {len(cached_images)} 张".encode('gbk', 'ignore').decode('gbk', 'ignore'))
@@ -1131,6 +1234,133 @@ class NotionSaver:
             print(f"[FAIL] 更新专辑请求异常: {e}")
             return False
 
+# 六大主领域定义（与 notion_manager.py 保持一致）
+ALBUM_DOMAINS = (
+    "🛠️ 硬核技术与职业效能",
+    "📸 视觉叙事与影像实验室",
+    "🦾 生活百科与生存技能",
+    "🌿 身心重塑与自我管理",
+    "📍 地理图志与探店计划",
+    "🎭 奇趣碎片与小众文化",
+)
+
+
+def _handle_create_album(args):
+    """处理新建专辑的 CLI 逻辑。"""
+    album_name = (args.create_album or "").strip()
+    if not album_name:
+        print("[FAIL] 专辑名称不能为空")
+        sys.exit(1)
+
+    # 如果没有提供 domain-number，输出领域列表让用户选择
+    if not args.domain_number:
+        print("OPENCLAW_REPLY_START")
+        print(f"即将创建专辑「{album_name}」，请选择所属主领域：")
+        for idx, domain in enumerate(ALBUM_DOMAINS, 1):
+            print(f"{idx}. {domain}")
+        print("回复数字 1-6 确认创建。")
+        print("OPENCLAW_REPLY_END")
+
+        # 将待创建的专辑名暂存，供第二步使用
+        pending_file = Path(__file__).parent / "pending_create_album.json"
+        with open(pending_file, "w", encoding="utf-8") as f:
+            json.dump({"album_name": album_name}, f, ensure_ascii=False)
+        sys.exit(0)
+
+    # 有 domain-number，执行创建 — 复用 NotionManager（动态获取字段名，不硬编码）
+    domain_index = args.domain_number - 1
+    domain_name = ALBUM_DOMAINS[domain_index]
+
+    from notion_manager import NotionNoteManager
+    manager = NotionNoteManager()
+    result = manager.create_album(album_name, domain_name)
+
+    if result.get("ok"):
+        album_info = result["album"]
+        # 刷新全局 ALBUM_MAP
+        global ALBUM_MAP
+        ALBUM_MAP[album_info["name"]] = album_info["id"]
+        print("OPENCLAW_REPLY_START")
+        print(f"已创建专辑 ✅")
+        print(f"专辑名：{album_info['name']}")
+        print(f"主领域：{album_info['domain']}")
+        print(f"Notion ID：{album_info['id']}")
+        print("OPENCLAW_REPLY_END")
+    else:
+        print(f"[FAIL] {result.get('error', '创建专辑失败')}")
+        sys.exit(1)
+
+
+def finalize_and_save(data):
+    if data.get("cover_file"):
+        cover_file = Path(str(data.get("cover_file")).strip()).expanduser()
+        if not cover_file.exists() or not cover_file.is_file():
+            print(f"[FAIL] 封面图片文件不存在: {cover_file}")
+            return 1
+        data["cover_file"] = str(cover_file)
+
+    if args_album := data.get("album"):
+        data["album"] = args_album
+    else:
+        album_candidates = recommend_albums(data)
+        if album_candidates:
+            data["album_candidates"] = album_candidates
+            data["album"] = album_candidates[0]["name"]
+
+    print(f"标题: {data.get('title')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    print(f"链接: {data.get('url')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    print(f"简介: {data.get('summary')[:50]}...".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    if data.get("author"):
+        print(f"作者: {data.get('author')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    if data.get("tags"):
+        print(f"标签: {data.get('tags')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    if data.get("cover"):
+        print(f"封面: {data.get('cover')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    if data.get("cover_file"):
+        print(f"本地封面: {data.get('cover_file')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    if data.get("album"):
+        print(f"专辑: {data.get('album')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
+    print_album_candidates(data.get("album_candidates", []), data.get("album"))
+    print("=" * 50)
+
+    saver = NotionSaver()
+    note_id = extract_note_id(data.get("url", ""))
+
+    if note_id:
+        print(f"正在检查 Notion 中是否已存在该笔记 (ID: {note_id})...")
+        duplicate_id = saver.check_duplicate(note_id)
+        if duplicate_id:
+            print(f"[SKIP] 该笔记已存在于Notion中，跳过保存 (页面ID: {duplicate_id})")
+            saver.backfill_placeholder(duplicate_id, data)
+            if data.get("cover"):
+                saver.persist_cover_for_page(duplicate_id, data.get("cover"))
+            if data.get("cover_file"):
+                saver.persist_cover_file_for_page(duplicate_id, data.get("cover_file"))
+            if data.get("album_candidates"):
+                write_album_candidates(duplicate_id, data["album_candidates"], data.get("album"))
+                print_album_candidates(data["album_candidates"], data.get("album"))
+            print_openclaw_reply(data, existing=True)
+            with open(Path(__file__).parent / "last_page_id.txt", "w", encoding="utf-8") as f:
+                f.write(duplicate_id)
+            clear_pending_cover_note()
+            return 0
+
+    page_id = saver.save_to_notion(data)
+
+    if page_id:
+        with open(Path(__file__).parent / "last_page_id.txt", "w", encoding="utf-8") as f:
+            f.write(page_id)
+        if data.get("album_candidates"):
+            write_album_candidates(page_id, data["album_candidates"], data.get("album"))
+        clear_pending_cover_note()
+        print_openclaw_reply(data)
+        print("[OK] 处理完成!")
+        return 0
+
+    print("[FAIL] 处理失败!")
+    return 1
+
+
 def main():
     parser = argparse.ArgumentParser(description='保存小红书笔记到Notion')
     parser.add_argument('--url', help='小红书链接 (可选，也可从文件读取)')
@@ -1139,15 +1369,63 @@ def main():
     parser.add_argument('--author', help='作者')
     parser.add_argument('--tags', help='标签（逗号分隔）')
     parser.add_argument('--cover', help='封面图片URL')
+    parser.add_argument('--cover-file', help='本地封面图片文件路径，用于 OpenClaw 图片消息补封面')
+    parser.add_argument('--save-pending-cover', action='store_true',
+                        help='使用 --cover-file 保存最近一次因缺封面暂存的小红书笔记')
     parser.add_argument('--append-tags', help='追加标签（逗号分隔），将应用到最近一次保存的笔记上')
     parser.add_argument('--update-album', help='更新专辑名称，将应用到最近一次保存的笔记上')
     parser.add_argument('--select-album-candidate', type=int, choices=range(1, MAX_ALBUM_CANDIDATES + 1), metavar='N', help='按最近一次候选列表的序号更新专辑，范围 1-5')
     parser.add_argument('--describe-album', help='为指定专辑写入或更新给 LLM 参考的语义描述')
     parser.add_argument('--album-description', help='专辑语义描述文本，需配合 --describe-album 使用')
     parser.add_argument('--album', help='归属专辑名称，用于Notion中的Relation关联')
-    
+    parser.add_argument('--create-album', help='新建专辑名称，将在 Notion 专辑库中创建新专辑页面')
+    parser.add_argument('--domain-number', type=int, choices=range(1, 7), metavar='N',
+                        help='新建专辑的主领域编号（1-6），需配合 --create-album 使用。'
+                             '1=硬核技术与职业效能 2=视觉叙事与影像实验室 '
+                             '3=生活百科与生存技能 4=身心重塑与自我管理 '
+                             '5=地理图志与探店计划 6=奇趣碎片与小众文化')
+    parser.add_argument('--list-domains', action='store_true',
+                        help='列出六大主领域列表，供选择专辑领域时参考')
+
     args = parser.parse_args()
-    
+
+    # ==========================================
+    # 列出六大主领域
+    # ==========================================
+    if args.list_domains:
+        print("OPENCLAW_REPLY_START")
+        print("请选择专辑所属的主领域：")
+        print("1. 🛠️ 硬核技术与职业效能")
+        print("2. 📸 视觉叙事与影像实验室")
+        print("3. 🦾 生活百科与生存技能")
+        print("4. 🌿 身心重塑与自我管理")
+        print("5. 📍 地理图志与探店计划")
+        print("6. 🎭 奇趣碎片与小众文化")
+        print("回复数字 1-6 即可创建专辑。")
+        print("OPENCLAW_REPLY_END")
+        sys.exit(0)
+
+    # ==========================================
+    # 新建专辑（两步交互：先选领域，再创建）
+    # ==========================================
+    if args.create_album:
+        _handle_create_album(args)
+        sys.exit(0)
+
+    if args.save_pending_cover:
+        if not args.cover_file:
+            print("[FAIL] 缺少 --cover-file，无法补封面保存。")
+            sys.exit(1)
+        pending = read_pending_cover_note()
+        if not pending or not pending.get("data"):
+            print("[FAIL] 没有待补封面的笔记。请先发送小红书卡片，等系统提示缺封面后再发送图片。")
+            sys.exit(1)
+        data = pending["data"]
+        data["cover_file"] = args.cover_file
+        data.pop("cover", None)
+        print("正在用本地图片补封面并保存暂存笔记...")
+        sys.exit(finalize_and_save(data))
+
     # 如果是追加标签的指令
     if args.append_tags:
         last_id_file = Path(__file__).parent / "last_page_id.txt"
@@ -1238,8 +1516,10 @@ def main():
         "summary": args.summary,
     }
     
-    # 如果没有提供必填项，则调用提取器自动提取
-    if not args.title or not args.summary:
+    # 如果缺少正文信息或封面，则调用提取器自动提取。
+    # 卡片字段常常只有标题/简介/标签，没有封面；这种情况下也必须回源提取。
+    # 如果已经提供本地封面文件，则不再因为缺少外链封面而回源。
+    if not args.title or not args.summary or (not args.cover and not args.cover_file):
         print(f"正在从链接自动提取内容: {args.url} ...")
         try:
             from local_extractor import XiaohongshuExtractor
@@ -1281,69 +1561,25 @@ def main():
         
     if args.cover:
         data["cover"] = args.cover
-        
+    if args.cover_file:
+        data["cover_file"] = args.cover_file
+
+    if not data.get("cover") and not data.get("cover_file"):
+        note_id = extract_note_id(data.get("url", ""))
+        write_pending_cover_note(data, note_id=note_id or "")
+        print("[FAIL] 未获取到封面，已停止保存，避免创建无封面的 Notion 笔记。")
+        print("已暂存这条笔记。请提供完整可访问的小红书 jump_url，或发送一张封面图片给 OpenClaw 后用 --save-pending-cover 补存。")
+        print("提示：QQ 卡片链接不要删减 xsec_token、xhsshare、share_id、share_channel、code 等 query 参数。")
+        print("OPENCLAW_REPLY_START")
+        print("这条笔记被小红书验证码/权限页拦住，封面没抓到，所以没有创建 Notion 页面。")
+        print("我已经暂存这条笔记的信息。请直接把封面图片发给我，我会把这张图片上传为 Notion 封面并继续保存。")
+        print("OPENCLAW_REPLY_END")
+        sys.exit(1)
+
     if args.album:
         data["album"] = args.album
-    else:
-        album_candidates = recommend_albums(data)
-        if album_candidates:
-            data["album_candidates"] = album_candidates
-            data["album"] = album_candidates[0]["name"]
 
-    print(f"标题: {data.get('title')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
-    print(f"链接: {data.get('url')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
-    print(f"简介: {data.get('summary')[:50]}...".encode('gbk', 'ignore').decode('gbk', 'ignore'))
-    if data.get("author"):
-        print(f"作者: {data.get('author')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
-    if data.get("tags"):
-        print(f"标签: {data.get('tags')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
-    if data.get("cover"):
-        print(f"封面: {data.get('cover')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
-    if data.get("album"):
-        print(f"专辑: {data.get('album')}".encode('gbk', 'ignore').decode('gbk', 'ignore'))
-    print_album_candidates(data.get("album_candidates", []), data.get("album"))
-    print("=" * 50)
-    
-    # 保存到Notion
-    saver = NotionSaver()
-    
-    import re
-    note_id = None
-    # 小红书笔记ID通常是24位字母数字组合
-    match = re.search(r'/(?:item|explore)/([a-zA-Z0-9]{24})', data.get("url", ""))
-    if match:
-        note_id = match.group(1)
-        
-    if note_id:
-        print(f"正在检查 Notion 中是否已存在该笔记 (ID: {note_id})...")
-        duplicate_id = saver.check_duplicate(note_id)
-        if duplicate_id:
-            print(f"[SKIP] 该笔记已存在于Notion中，跳过保存 (页面ID: {duplicate_id})")
-            saver.backfill_placeholder(duplicate_id, data)
-            if data.get("cover"):
-                saver.persist_cover_for_page(duplicate_id, data.get("cover"))
-            if data.get("album_candidates"):
-                write_album_candidates(duplicate_id, data["album_candidates"], data.get("album"))
-                print_album_candidates(data["album_candidates"], data.get("album"))
-            print_openclaw_reply(data, existing=True)
-            # 把已经存在的 ID 写进 last_page_id，这样哪怕是重复的，也能随时给它加标签！
-            with open(Path(__file__).parent / "last_page_id.txt", "w", encoding="utf-8") as f:
-                f.write(duplicate_id)
-            sys.exit(0)
-            
-    page_id = saver.save_to_notion(data)
-    
-    if page_id:
-        with open(Path(__file__).parent / "last_page_id.txt", "w", encoding="utf-8") as f:
-            f.write(page_id)
-        if data.get("album_candidates"):
-            write_album_candidates(page_id, data["album_candidates"], data.get("album"))
-        print_openclaw_reply(data)
-        print("[OK] 处理完成!")
-        sys.exit(0)
-    else:
-        print("[FAIL] 处理失败!")
-        sys.exit(1)
+    sys.exit(finalize_and_save(data))
 
 if __name__ == "__main__":
     main()

@@ -196,11 +196,30 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         if path == "/api/materials/photo":
             self.handle_api(lambda: self.manager.create_photo_materials(self.read_json_body()))
             return
+        if path == "/api/notes/cover":
+            body = self.read_json_body()
+            self.handle_api(
+                lambda: {
+                    "ok": True,
+                    "page_id": body.get("page_id", ""),
+                    "cover": self.manager.refresh_cover_local(body.get("page_id", "")),
+                }
+            )
+            return
+        if path == "/api/materials/photo/update":
+            body = self.read_json_body()
+            self.handle_api(lambda: self.manager.update_photo_material_tag(
+                page_id=body.get("page_id", ""),
+                tag_group=body.get("tag_group", ""),
+                tag_value=body.get("tag_value", ""),
+                action=body.get("action", "remove"),  # remove | add
+            ))
+            return
         self.write_json({"ok": False, "error": "接口不存在。"}, status=HTTPStatus.NOT_FOUND)
 
     def is_authorized(self, path):
         auth = self.auth_config
-        if path in AUTH_EXEMPT_PATHS:
+        if path in AUTH_EXEMPT_PATHS or path.startswith("/covers/"):
             return True
         if not auth.get("enabled"):
             return self.is_local_request()

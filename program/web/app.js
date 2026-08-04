@@ -42,6 +42,7 @@ const BACKGROUND_IMAGE_QUALITY = 0.84;
 const MAX_ALBUM_DESCRIPTION_LENGTH = 2000;
 const TAG_COLOR_COUNT = 9;
 const DESCRIPTION_DOCK_MEDIA = "(min-width: 1880px)";
+const NOTE_STATUSES = ["待阅读", "已整理", "待执行"];
 const SEARCH_TOKEN_FIELD_DELIMITER_PATTERN = /[+＋]+/;
 const MATERIAL_TOKEN_FIELD_DELIMITER_PATTERN = /[+＋,，、\/／]+/;
 const DRAG_SELECT_THRESHOLD = 6;
@@ -229,6 +230,7 @@ const el = {
   imagePickerSubtitle: document.querySelector("#imagePickerSubtitle"),
   imagePickerMeta: document.querySelector("#imagePickerMeta"),
   imagePickerRefresh: document.querySelector("#imagePickerRefresh"),
+  imagePasteZone: document.querySelector("#imagePasteZone"),
   imagePickerGrid: document.querySelector("#imagePickerGrid"),
   imageMaterialForm: document.querySelector("#imageMaterialForm"),
   compositionTagsInput: document.querySelector("#compositionTagsInput"),
@@ -539,6 +541,18 @@ function ensureContextMenu() {
       <span>打开 Notion 页面</span>
     </button>
     <div class="note-context-divider" aria-hidden="true"></div>
+    <div class="note-context-section-label">修改状态</div>
+    <div class="note-context-status-list">
+      ${NOTE_STATUSES.map(
+        (status) => `
+          <button class="note-context-action note-context-status-action" type="button" role="menuitem" data-context-status="${escapeAttr(status)}">
+            <span class="note-context-icon" aria-hidden="true">●</span>
+            <span>${escapeHtml(status)}</span>
+          </button>
+        `
+      ).join("")}
+    </div>
+    <div class="note-context-divider" aria-hidden="true"></div>
     <button class="note-context-action is-danger" type="button" role="menuitem" data-context-action="delete">
       <span class="note-context-icon" aria-hidden="true">⌫</span>
       <span>删除该篇笔记</span>
@@ -551,9 +565,13 @@ function ensureContextMenu() {
   el.openSourceButton = menu.querySelector('[data-context-action="source"]');
   el.openNotionButton = menu.querySelector('[data-context-action="notion"]');
   el.deleteNoteButton = menu.querySelector('[data-context-action="delete"]');
+  el.contextStatusButtons = Array.from(menu.querySelectorAll("[data-context-status]"));
   el.openSourceButton.addEventListener("click", () => openContextNoteLink("source"));
   el.openNotionButton.addEventListener("click", () => openContextNoteLink("notion"));
   el.deleteNoteButton.addEventListener("click", deleteContextNote);
+  el.contextStatusButtons.forEach((button) => {
+    button.addEventListener("click", () => updateContextNoteStatus(button.dataset.contextStatus));
+  });
   return menu;
 }
 
@@ -564,6 +582,33 @@ function setMessage(text, type = "") {
 
 function getNoteById(pageId) {
   return state.notes.find((note) => note.id === pageId);
+}
+
+function findRenderedCard(pageId) {
+  return Array.from(el.notesGrid.querySelectorAll(".card")).find(
+    (cardEl) => cardEl.dataset.pageId === pageId
+  );
+}
+
+function removeRenderedCard(pageId) {
+  findRenderedCard(pageId)?.remove();
+  state.selectedIds.delete(pageId);
+  state.notes = state.notes.filter((note) => note.id !== pageId);
+  el.emptyState.classList.toggle("is-visible", state.notes.length === 0);
+  updateSelection();
+  updateResultMeta();
+}
+
+function updateRenderedCardStatus(pageId, status) {
+  const cardEl = findRenderedCard(pageId);
+  if (!cardEl) return;
+  const statusEl = cardEl.querySelector(".card-bottom-status.status");
+  const statusText = cardEl.querySelector(".status-text");
+  if (!statusEl || !statusText) return;
+  const cleanStatus = status || "";
+  statusEl.classList.toggle("is-empty", !cleanStatus);
+  statusEl.title = `状态：${cleanStatus || "无状态"}`;
+  statusText.textContent = cleanStatus || "无状态";
 }
 
 function hideContextMenu() {
@@ -584,6 +629,12 @@ function showContextMenu(pageId, x, y) {
   el.openSourceButton.title = sourceUrl ? sourceUrl : "这篇笔记没有原文链接";
   el.openNotionButton.disabled = !notionUrl || notionUrl === "#";
   el.openNotionButton.title = notionUrl && notionUrl !== "#" ? notionUrl : "这篇笔记没有 Notion 链接";
+  el.contextStatusButtons?.forEach((button) => {
+    const isCurrent = button.dataset.contextStatus === note.status;
+    button.classList.toggle("is-current", isCurrent);
+    button.disabled = isCurrent;
+    button.title = isCurrent ? "当前状态" : `改为「${button.dataset.contextStatus}」`;
+  });
   menu.classList.remove("is-hidden");
 
   const margin = 8;
@@ -2102,7 +2153,7 @@ function toggleSelection(pageId, cardEl, checkbox) {
 }
 
 function imageKey(image) {
-  return image.asset_id || image.source_url || String(image.index || "");
+  return image.client_id || image.asset_id || image.source_url || String(image.index || "");
 }
 
 function setImagePickerOpen(isOpen) {
@@ -2247,7 +2298,7 @@ function renderImagePicker() {
 
   if (!state.imagePickerImages.length) {
     el.imagePickerGrid.innerHTML =
-      '<div class="image-picker-empty">没有提取到图片。可以点“重新提取图片”再试一次。</div>';
+      '<div class="image-picker-empty">没有提取到图片。可以点“重新提取图片”，也可以点击上方粘贴区后按 Ctrl+V 加入剪切板图片。</div>';
     return;
   }
 
@@ -2307,6 +2358,68 @@ function closeImagePreview() {
   if (!overlay) return;
   overlay.classList.remove("is-open");
   state.imagePreviewOpen = false;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(new Error("读取剪切板图片失败。")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function nextPastedImageIndex(offset = 0) {
+  const maxIndex = state.imagePickerImages.reduce(
+    (maxValue, image) => Math.max(maxValue, Number(image.index || 0)),
+    0
+  );
+  return maxIndex + offset + 1;
+}
+
+async function addImageFilesToPicker(files) {
+  const imageFiles = Array.from(files || []).filter((file) =>
+    String(file?.type || "").startsWith("image/")
+  );
+  if (!imageFiles.length) {
+    setImageMaterialNotice("剪切板里没有可用图片。", "error");
+    return;
+  }
+
+  if (state.imagePickerImages.length + imageFiles.length > 20) {
+    setImageMaterialNotice("单次最多保留 20 张待保存图片，请先保存或减少粘贴数量。", "error");
+    return;
+  }
+
+  try {
+    const imported = [];
+    for (const [offset, file] of imageFiles.entries()) {
+      const dataUrl = await fileToDataUrl(file);
+      const index = nextPastedImageIndex(offset);
+      imported.push({
+        client_id: `pasted-${Date.now()}-${offset}`,
+        source_url: dataUrl,
+        local_url: dataUrl,
+        index,
+        title: `剪切板图片 #${index}`,
+        pasted: true,
+      });
+    }
+    state.imagePickerImages = [...state.imagePickerImages, ...imported];
+    imported.forEach((image) => state.selectedImageKeys.add(imageKey(image)));
+    renderImagePicker();
+    setImageMaterialNotice(`已加入 ${imported.length} 张剪切板图片。`, "success");
+  } catch (error) {
+    setImageMaterialNotice(error.message || "读取剪切板图片失败。", "error");
+  }
+}
+
+function handleImagePaste(event) {
+  if (!el.imagePickerModal.classList.contains("is-open")) return;
+  const files = Array.from(event.clipboardData?.files || []);
+  if (!files.some((file) => String(file.type || "").startsWith("image/"))) return;
+  event.preventDefault();
+  addImageFilesToPicker(files);
 }
 
 async function openImagePicker(pageId, { refresh = false } = {}) {
@@ -2438,6 +2551,39 @@ async function submitPhotoMaterials(event) {
   }
 }
 
+function onCoverError(img) {
+  // Avoid infinite retry loops if the local fallback also fails.
+  if (img.dataset.coverRetried) {
+    img.classList.add("is-failed");
+    return;
+  }
+  img.dataset.coverRetried = "1";
+
+  const cardEl = img.closest(".card");
+  const pageId = cardEl && cardEl.dataset.pageId;
+  if (!pageId) {
+    img.classList.add("is-failed");
+    return;
+  }
+
+  fetch("/api/notes/cover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page_id: pageId }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && data.ok && data.cover) {
+        img.src = data.cover;
+      } else {
+        img.classList.add("is-failed");
+      }
+    })
+    .catch(() => {
+      img.classList.add("is-failed");
+    });
+}
+
 function renderCard(note) {
   const title = note.title || "未命名笔记";
   const sourceUrl = note.url || "";
@@ -2451,7 +2597,7 @@ function renderCard(note) {
   const albumChips = renderAlbumChips(note.albums || []);
 
   const coverHtml = cover
-    ? `<img class="cover-img" src="${escapeAttr(cover)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="this.classList.add('is-failed')" />`
+    ? `<img class="cover-img" src="${escapeAttr(cover)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="onCoverError(this)" />`
     : '<div class="cover-fallback">无封面</div>';
 
   return `
@@ -2829,6 +2975,52 @@ function openContextNoteLink(type) {
   hideContextMenu();
 }
 
+async function updateContextNoteStatus(status) {
+  const pageId = state.contextNoteId;
+  const note = getNoteById(pageId);
+  if (!pageId || !note || !status) {
+    hideContextMenu();
+    return;
+  }
+  if (note.status === status) {
+    hideContextMenu();
+    return;
+  }
+
+  hideContextMenu();
+  setMessage(`正在将《${note.title || "未命名笔记"}》改为「${status}」...`, "busy");
+
+  try {
+    const data = await requestJson("/api/notes/batch", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "status",
+        page_ids: [pageId],
+        status,
+      }),
+    });
+    if (data.failed) {
+      const firstFailure = data.failures?.[0]?.error;
+      setMessage(
+        `${data.message || "状态修改失败。"}${firstFailure ? ` 首个失败原因：${firstFailure}` : ""}`,
+        "error"
+      );
+      return;
+    }
+
+    note.status = status;
+    const activeStatus = filterValue(el.statusSelect.value);
+    if (activeStatus && activeStatus !== status) {
+      removeRenderedCard(pageId);
+    } else {
+      updateRenderedCardStatus(pageId, status);
+    }
+    setMessage(data.message || `已改为「${status}」。`, data.failed ? "error" : "success");
+  } catch (error) {
+    setMessage(error.message, "error");
+  }
+}
+
 async function deleteContextNote() {
   const pageId = state.contextNoteId;
   const note = getNoteById(pageId);
@@ -2923,6 +3115,32 @@ function bindEvents() {
   el.imagePickerRefresh.addEventListener("click", () => {
     if (state.imagePickerNoteId) {
       openImagePicker(state.imagePickerNoteId, { refresh: true });
+    }
+  });
+  el.imagePasteZone?.addEventListener("click", () => {
+    el.imagePasteZone.focus();
+  });
+  el.imagePasteZone?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      el.imagePasteZone.focus();
+    }
+  });
+  el.imagePasteZone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    el.imagePasteZone.classList.add("is-dragover");
+  });
+  el.imagePasteZone?.addEventListener("dragleave", () => {
+    el.imagePasteZone.classList.remove("is-dragover");
+  });
+  el.imagePasteZone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    el.imagePasteZone.classList.remove("is-dragover");
+    addImageFilesToPicker(event.dataTransfer?.files || []);
+  });
+  window.addEventListener("paste", (event) => {
+    if (document.activeElement === el.imagePasteZone) {
+      handleImagePaste(event);
     }
   });
   el.imagePickerGrid.addEventListener("click", (event) => {

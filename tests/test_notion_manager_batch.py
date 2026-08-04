@@ -23,6 +23,7 @@ from notion_manager import (  # noqa: E402
     normalize_tags,
     split_filter_terms,
 )
+from cover_assets import parse_data_image_url  # noqa: E402
 
 
 def title_property(value):
@@ -44,25 +45,29 @@ def make_page(
     color_tags=None,
     status="待阅读",
     album_ids=None,
+    cover_source="",
 ):
+    properties = {
+        TITLE_PROP: title_property(title),
+        URL_PROP: {"url": url},
+        SUMMARY_PROP: rich_text_property(summary),
+        AUTHOR_PROP: rich_text_property(author),
+        TAGS_PROP: rich_text_property(tags),
+        COLOR_TAGS_PROP: {
+            "multi_select": [{"name": value} for value in (color_tags or [])]
+        },
+        STATUS_PROP: {"select": {"name": status}},
+        ALBUM_PROP: {
+            "relation": [{"id": value} for value in (album_ids or [])],
+            "has_more": False,
+        },
+    }
+    if cover_source:
+        properties[COVER_URL_PROP] = {"url": cover_source}
     return {
         "id": page_id,
         "url": f"https://www.notion.so/{page_id}",
-        "properties": {
-            TITLE_PROP: title_property(title),
-            URL_PROP: {"url": url},
-            SUMMARY_PROP: rich_text_property(summary),
-            AUTHOR_PROP: rich_text_property(author),
-            TAGS_PROP: rich_text_property(tags),
-            COLOR_TAGS_PROP: {
-                "multi_select": [{"name": value} for value in (color_tags or [])]
-            },
-            STATUS_PROP: {"select": {"name": status}},
-            ALBUM_PROP: {
-                "relation": [{"id": value} for value in (album_ids or [])],
-                "has_more": False,
-            },
-        },
+        "properties": properties,
     }
 
 
@@ -72,6 +77,15 @@ class FakeCoverStore:
 
     def get_asset_for_page(self, page_id):
         return None
+
+
+class CoverAssetDataUrlTests(unittest.TestCase):
+    def test_parse_data_image_url_decodes_base64_image(self):
+        content, content_type = parse_data_image_url(
+            "data:image/png;base64,iVBORw0KGgo="
+        )
+        self.assertEqual(content_type, "image/png")
+        self.assertEqual(content, b"\x89PNG\r\n\x1a\n")
 
 
 class FakeCoverService:
@@ -172,6 +186,24 @@ class BatchManagerTests(unittest.TestCase):
             ["日系", "制服"],
         )
 
+    def test_page_to_note_uses_cover_source_when_page_cover_is_missing(self):
+        manager = self.make_manager({})
+        note = manager.page_to_note(
+            make_page(
+                "page-1",
+                cover_source="http://sns-webpic-qc.xhscdn.com/cover.webp",
+            )
+        )
+
+        self.assertEqual(
+            note["cover"],
+            "https://sns-webpic-qc.xhscdn.com/cover.webp",
+        )
+        self.assertEqual(
+            note["cover_source"],
+            "https://sns-webpic-qc.xhscdn.com/cover.webp",
+        )
+
     def test_text_filters_require_every_plus_separated_term(self):
         manager = self.make_manager({})
         note = {
@@ -230,6 +262,20 @@ class BatchManagerTests(unittest.TestCase):
         self.assertEqual(result["updated"], 1)
         patch = manager.property_patches[0][1]
         self.assertEqual(patch[ALBUM_PROP]["relation"], [{"id": "album-b"}])
+
+    def test_album_move_does_not_fetch_pages_before_patch(self):
+        manager = self.make_manager({})
+        manager.get_page = lambda page_id: (_ for _ in ()).throw(
+            AssertionError("move mode should not fetch pages")
+        )
+
+        result = manager.add_pages_to_album(["page-1", "page-2"], "album-b", mode="move")
+
+        self.assertEqual(result["updated"], 2)
+        self.assertEqual(
+            [page_id for page_id, _ in manager.property_patches],
+            ["page-1", "page-2"],
+        )
 
     def test_album_remove_preserves_other_relations(self):
         pages = {

@@ -142,6 +142,7 @@ simple_results/
 push_stdout.txt
 push_stderr.txt
 *.log
+*.log.err
 *.pid
 
 # Workspace memory (project-local, not for git)
@@ -150,3 +151,4 @@ push_stderr.txt
 # Temporary
 .DS_Store
 *.swp
+NUL

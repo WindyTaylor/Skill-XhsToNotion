@@ -8,88 +8,241 @@
     <title>图片管理 - 小红书收藏管理台</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260802-material-preview-card" />
+    <link rel="stylesheet" href="/styles.css?v=20260804-photo-folders" />
   </head>
   <body class="materials-page">
-    <div id="backgroundLayer" class="background-layer" aria-hidden="true"></div>
-    <main class="app-shell materials-shell">
-      <div class="control-dock materials-dock">
-        <header class="brand-row">
-          <div>
-            <h1>图片管理</h1>
-            <p id="materialsMeta" class="muted">正在读取摄影素材库...</p>
+    <div class="materials-board">
+      <div class="materials-shell-v2">
+        <!-- ===== 左侧筛选侧边栏 ===== -->
+        <aside class="materials-left-panel" aria-label="筛选条件">
+          <div class="materials-brand">
+            <div class="materials-brand-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+                <circle cx="6.5" cy="6.5" r="1.2"/>
+              </svg>
+            </div>
+            <div>
+              <h1 class="materials-brand-title">图片管理</h1>
+              <p class="materials-brand-sub">摄影素材库筛选</p>
+            </div>
           </div>
-          <div class="header-actions" aria-label="页面操作">
-            <button id="openMainButton" class="utility-button" type="button">返回主页面</button>
-            <button id="refreshMaterialsButton" class="icon-button" type="button" title="刷新">⟳</button>
+
+          <nav class="materials-nav" aria-label="快捷导航">
+            <button id="materialsNavAll" class="materials-nav-btn is-active" type="button" data-nav="all">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              <span>全部素材</span>
+              <span class="materials-nav-count" id="materialsNavAllCount">--</span>
+            </button>
+            <button id="materialsNavRemake" class="materials-nav-btn" type="button" data-nav="remake">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>适合复刻</span>
+              <span class="materials-nav-count" id="materialsNavRemakeCount">--</span>
+            </button>
+          </nav>
+
+          <section class="materials-photo-folders" aria-label="照片夹">
+            <div class="materials-photo-folders-head">
+              <h2>照片夹</h2>
+              <button id="materialsPhotoFolderSave" class="materials-photo-folder-save" type="button" title="保存当前筛选">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 5v14"/>
+                  <path d="M5 12h14"/>
+                </svg>
+              </button>
+            </div>
+            <div id="materialsPhotoFoldersList" class="materials-photo-folders-list"></div>
+          </section>
+
+          <div class="materials-filter-scroll" id="materialsTagGroupsScroll">
+            <!-- JS 注入：14 个标签组 -->
           </div>
-        </header>
 
-        <section class="search-bar materials-search" aria-label="图片素材搜索">
-          <label class="search-pill">
-            <span class="sr-only">搜索图片素材</span>
-            <input
-              id="materialsSearchInput"
-              type="search"
-              placeholder="搜索标题、来源、作者、标签、学习点"
-              autocomplete="off"
-            />
-            <button id="materialsSearchButton" class="pill-btn" type="button">搜索</button>
-          </label>
-        </section>
+          <button id="materialsClearFilters" class="materials-clear-btn" type="button">清空全部筛选</button>
+        </aside>
 
-        <section class="filter-chips" aria-label="图片素材筛选">
-          <span class="chip">
-            <span class="chip-label">状态</span>
-            <select id="materialsStatusSelect">
-              <option value="">全部</option>
-              <option value="待分析">待分析</option>
-              <option value="已拆解">已拆解</option>
-              <option value="已复刻">已复刻</option>
-              <option value="已内化">已内化</option>
-            </select>
-          </span>
-          <span class="chip">
-            <span class="chip-label">标签</span>
-            <select id="materialsTagSelect">
-              <option value="">全部</option>
-            </select>
-          </span>
-          <span id="materialsMessage" class="message materials-inline-message" aria-live="polite"></span>
-        </section>
+        <!-- ===== 中间主内容区 ===== -->
+        <main class="materials-main-panel">
+          <header class="materials-toolbar">
+            <div>
+              <h2 class="materials-toolbar-title">图片素材库</h2>
+              <p class="materials-toolbar-desc">按真实属性快速缩小图片范围，再进入详情复用学习点和复刻提示。</p>
+            </div>
+            <div class="materials-toolbar-actions">
+              <button id="openMainButton" class="materials-btn" type="button">返回主页面</button>
+              <button id="refreshMaterialsButton" class="materials-btn-icon" type="button" title="刷新">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-6.2-2.6"/><path d="M3 12a9 9 0 0 1 9-9 8.7 8.7 0 0 1 6.2 2.6"/><path d="M18 2v4h4"/><path d="M6 22v-4H2"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="materials-search-row">
+            <label class="materials-search-box">
+              <svg class="materials-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="materialsSearchInput" type="search" placeholder="搜索标题、来源标题、作者、标签、学习点、复刻提示" autocomplete="off"/>
+              <span class="materials-search-hint">Enter</span>
+            </label>
+          </div>
+
+          <!-- 快速标签筛选 -->
+          <div class="materials-quick-filters" id="materialsQuickFilters">
+            <!-- JS 注入：3 个快速筛选组（情绪氛围 / 服装类型 / 动作标签）-->
+          </div>
+
+          <!-- 排除标签输入 -->
+          <div class="materials-exclude-row" id="materialsExcludeRow">
+            <label class="materials-exclude-box">
+              <svg class="materials-exclude-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93 19.07 19.07"/></svg>
+              <input id="materialsExcludeInput" type="text" placeholder="输入要排除的标签，按 Enter 添加（如：ol、站姿）" autocomplete="off"/>
+            </label>
+            <div class="materials-exclude-chips" id="materialsExcludeChips"></div>
+          </div>
+
+          <!-- 正向选中标签 -->
+          <div id="materialsPositiveTagsRow" class="materials-positive-tags-row" style="display:none">
+            <span class="materials-positive-label">已选:</span>
+            <div class="materials-positive-chips" id="materialsPositiveChips"></div>
+          </div>
+
+          <div id="materialsActiveFilters" class="materials-active-filters" aria-label="当前筛选" style="display:none">
+            <div class="materials-active-left" id="materialsActiveLeft"></div>
+            <div class="materials-active-right">
+              <button id="materialsClearActiveBtn" class="materials-chip-clear" type="button">清空</button>
+            </div>
+          </div>
+
+          <div id="materialsCountBar" class="materials-count-bar"><span id="materialsCountText">共 -- 张图片</span></div>
+
+          <div id="materialsMessage" class="materials-message" aria-live="polite"></div>
+
+          <section id="materialsGrid" class="materials-grid-v2" aria-label="图片结果"></section>
+          <div id="materialsEmpty" class="materials-empty">还没有匹配的图片素材。</div>
+          <div class="materials-load-more-wrap">
+            <button id="loadMoreMaterialsButton" class="materials-btn materials-btn-primary" type="button">加载更多</button>
+          </div>
+        </main>
+
+        <!-- ===== 右侧详情侧边栏 ===== -->
+        <aside class="materials-right-panel" id="materialsRightPanel" aria-label="选中素材详情">
+          <div class="materials-detail-head">
+            <div>
+              <h3>选中图片属性</h3>
+              <p class="materials-detail-subtitle">字段与 Notion 素材库一致</p>
+            </div>
+            <button id="materialsDeselectBtn" class="materials-btn-icon" type="button" title="取消选中">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+
+          <div class="materials-detail-scroll">
+            <div id="materialsDetailEmpty" class="materials-detail-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+              <span>点击左侧卡片查看素材详情</span>
+            </div>
+
+            <div id="materialsDetailContent" style="display:none">
+              <div class="materials-detail-preview">
+                <img id="materialsDetailPreviewImg" src="" alt="" referrerpolicy="no-referrer"/>
+              </div>
+              <div class="materials-detail-preview-body">
+                <strong id="materialsDetailTitle">--</strong>
+                <div id="materialsDetailMetaTags" class="materials-detail-inline-tags"></div>
+              </div>
+
+              <div class="materials-detail-props" id="materialsDetailProps"></div>
+
+              <div class="materials-detail-tag-groups" id="materialsDetailTagGroups"></div>
+
+              <div class="materials-detail-note" id="materialsDetailLearning" style="display:none">
+                <strong>学习点</strong>
+                <p id="materialsDetailLearningText"></p>
+              </div>
+
+              <div class="materials-detail-note" id="materialsDetailRemake" style="display:none">
+                <strong>复刻提示</strong>
+                <p id="materialsDetailRemakeText"></p>
+              </div>
+
+              <div class="materials-detail-actions">
+                <a id="materialsDetailSourceLink" class="materials-btn" href="#" target="_blank" rel="noreferrer">打开原文</a>
+                <a id="materialsDetailNotionLink" class="materials-btn" href="#" target="_blank" rel="noreferrer">打开 Notion</a>
+                <button id="materialsDetailPreviewBtn" class="materials-btn" type="button">查看大图</button>
+                <button id="materialsDetailResplitBtn" class="materials-btn materials-btn-primary" type="button">重新拆图</button>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
+    </div>
 
-      <section class="materials-stats" aria-label="图片素材概览">
-        <article>
-          <span>当前结果</span>
-          <strong id="materialsVisibleCount">0</strong>
-        </article>
-        <article>
-          <span>可筛选标签</span>
-          <strong id="materialsTagCount">0</strong>
-        </article>
-        <article>
-          <span>下一页</span>
-          <strong id="materialsMoreState">无</strong>
-        </article>
-      </section>
-
-      <section id="materialsGrid" class="materials-grid" aria-label="图片素材列表"></section>
-      <div id="materialsEmpty" class="empty-state">还没有匹配的图片素材。</div>
-      <div class="load-more-wrap">
-        <button id="loadMoreMaterialsButton" class="secondary-button" type="button">加载更多</button>
-      </div>
-    </main>
-
-    <div
-      id="materialPreviewOverlay"
-      class="image-preview-overlay"
-      aria-hidden="true"
-    >
+    <div id="materialPreviewOverlay" class="image-preview-overlay" aria-hidden="true">
       <button id="materialPreviewClose" class="image-preview-close" type="button" aria-label="关闭预览">×</button>
       <img id="materialPreviewImg" class="image-preview-img" alt="" />
     </div>
 
-    <script src="/materials.js?v=20260802-material-preview-card"></script>
+    <!-- 拆图模态框（复用 index.html 的 image picker，不允许修改） -->
+    <button
+      id="imagePickerBackdrop"
+      class="image-picker-backdrop"
+      type="button"
+      aria-label="关闭摄影拆图窗口"
+      tabindex="-1"
+    ></button>
+    <section
+      id="imagePickerModal"
+      class="image-picker-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="imagePickerTitle"
+      aria-hidden="true"
+    >
+      <header class="image-picker-header">
+        <div>
+          <span class="image-picker-eyebrow">PHOTO MATERIALS</span>
+          <h2 id="imagePickerTitle">摄影拆图</h2>
+          <p id="imagePickerSubtitle">选择要沉淀的图片，手动填写学习信息后保存到素材库。</p>
+        </div>
+        <button id="imagePickerClose" class="album-editor-close" type="button" aria-label="关闭">×</button>
+      </header>
+      <div class="image-picker-layout">
+        <div class="image-picker-main">
+          <div class="image-picker-toolbar">
+            <span id="imagePickerMeta">尚未加载图片</span>
+            <button id="imagePickerRefresh" class="secondary-button" type="button">重新提取图片</button>
+          </div>
+          <div id="imagePickerGrid" class="image-picker-grid"></div>
+        </div>
+        <form id="imageMaterialForm" class="image-material-form">
+          <label><span>构图标签</span><input id="compositionTagsInput" type="text" placeholder="三分法, 引导线, 留白, 可参考" autocomplete="off" /></label>
+          <label><span>色彩标签</span><input id="colorTagsInput" type="text" placeholder="低饱和, 暖色, 对比色, 可参考" autocomplete="off" /></label>
+          <label><span>动作标签</span><input id="actionTagsInput" type="text" placeholder="站姿, 坐姿, 蹲姿, 躺姿" autocomplete="off" /></label>
+          <label><span>服装类型</span><input id="clothingTagsInput" type="text" placeholder="水手服, 旗袍, lolita, 清楚系, ol" autocomplete="off" /></label>
+          <label><span>情绪氛围</span><input id="moodTagsInput" type="text" placeholder="日系, 电影感, 氛围感, 日常感, 网感" autocomplete="off" /></label>
+          <label><span>人数类型</span><input id="peopleTagsInput" type="text" placeholder="单人, 双人, 多人" autocomplete="off" /></label>
+          <label><span>光线标签</span><input id="lightTagsInput" type="text" placeholder="逆光, 顺光, 闪光灯" autocomplete="off" /></label>
+          <label><span>场景</span><input id="sceneInput" type="text" placeholder="街拍, 人像, 室内, 探店, 街道, 场照, 大景" autocomplete="off" /></label>
+          <label><span>时间类型</span><input id="timeTagsInput" type="text" placeholder="白天, 夜景" autocomplete="off" /></label>
+          <label><span>天气类型</span><input id="weatherTagsInput" type="text" placeholder="晴天, 阴天" autocomplete="off" /></label>
+          <label><span>机位角度</span><input id="angleTagsInput" type="text" placeholder="低机位, 俯拍, 平视, 侧面" autocomplete="off" /></label>
+          <label><span>焦段类型</span><input id="focalLengthTagsInput" type="text" placeholder="广角, 50, 85, 长焦" autocomplete="off" /></label>
+          <label><span>景别</span><input id="shotTypeSelect" type="text" placeholder="特写, 半身, 全身, 大景, 空镜" autocomplete="off" /></label>
+          <label><span>新增标签</span><input id="customTagsInput" type="text" placeholder="直接输入标签，回车确认" autocomplete="off" /></label>
+          <label class="image-material-wide"><span>学习点</span><textarea id="learningNoteTextarea" placeholder="写下这张图值得学习的画面要点"></textarea></label>
+          <label class="image-material-wide"><span>复刻提示</span><textarea id="remakeHintTextarea" placeholder="写下以后拍摄时可以照着做的动作"></textarea></label>
+          <label><span>状态</span><select id="materialStatusSelect"><option value="待分析">待分析</option><option value="已拆解">已拆解</option><option value="已复刻">已复刻</option><option value="已内化">已内化</option></select></label>
+          <label class="image-material-rating-field"><span>评分</span><input id="materialRatingSelect" type="hidden" value="" /><div id="materialRatingStars" class="material-rating-stars" role="radiogroup" aria-label="评分"><button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="1 分" data-rating="1">★</button><button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="2 分" data-rating="2">★</button><button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="3 分" data-rating="3">★</button><button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="4 分" data-rating="4">★</button><button class="material-rating-star" type="button" role="radio" aria-checked="false" aria-label="5 分" data-rating="5">★</button></div></label>
+          <label class="image-material-toggle"><input id="remakeReadyCheckbox" type="checkbox" /><span>适合复刻</span></label>
+          <label class="image-material-toggle"><input id="materialUploadCheckbox" type="checkbox" checked /><span>上传为 Notion 托管文件</span></label>
+          <div id="imageMaterialNotice" class="image-material-notice" role="status" aria-live="polite"></div>
+          <button id="saveMaterialsButton" class="primary-button" type="submit" disabled>保存选中图片</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- app.js 延迟到点击"重新拆图"时才加载，避免 init() 绑定 index.html 的 DOM 导致报错 -->
+    <script src="/materials.js?v=20260804-photo-folders-order"></script>
   </body>
 </html>
