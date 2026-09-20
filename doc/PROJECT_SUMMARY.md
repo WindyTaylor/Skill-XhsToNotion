@@ -1,6 +1,6 @@
 # 小红书转 Notion 项目总结
 
-Updated: 2026-07-10
+Updated: 2026-08-05
 
 ## 项目目标
 
@@ -44,12 +44,27 @@ Updated: 2026-07-10
 - `program/manage_server.py`：本地 HTTP 服务，默认监听 `http://127.0.0.1:8765`。
 - `program/web/`：管理台前端，包含搜索框、过滤器、结果卡片、滚动加载、多选、批量整理、按 Notion 六大主领域分组的左侧可收起 AI 专辑语义说明工作区，以及右键移入回收站操作。
 - `program/web/notion_launcher.html`：可上传或嵌入 Notion 的轻量启动页，通过 `xhs-notion-console://` 唤起本机脚本并打开本地管理台。
-- `program/start_management_console.ps1`：一键启动本地管理台，可选启动 Cloudflare Quick Tunnel。
+- `program/start_management_console.ps1`：一键启动本地管理台。
 - `program/install_console_protocol.ps1`：注册 Windows 用户级 `xhs-notion-console://` 协议。
 
-该功能遵循 `doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md`：追加到专辑时保留原有 Relation，不做覆盖式移动；删除入口仅将页面移入 Notion 回收站。
+该功能约定：追加到专辑时保留原有 Relation，不做覆盖式移动；删除入口仅将页面移入 Notion 回收站。后续维护优先参考 `program/README.md` 和相关 `program/web/` 实现。
 
 Notion 启动页的已知限制：上传 HTML 会运行在沙箱 iframe 中，部分客户端可能拦截本机协议和弹窗。稳定入口仍是直接访问 `http://127.0.0.1:8765`、浏览器书签或桌面快捷方式。
+
+## 图片素材管理台
+
+2026-08-05 管理台新增摄影素材页 `program/web/materials.html`，用于把来源笔记中的参考图沉淀到 Notion 摄影素材库，并支持后续整理和复刻筛选。
+
+核心能力：
+
+- 从 `GET /api/materials/photo` 读取图片素材，按标题、来源标题、作者、标签、学习点和复刻提示搜索。
+- 按 Notion 素材库真实字段展示分组标签，包括构图、色彩、动作、服装、情绪、人数、光线、场景、时间、天气、机位、焦段、景别和新增标签。
+- 支持正向标签筛选、排除标签筛选，以及保存在浏览器本地的“照片夹”筛选预设。
+- 图片网格支持拖拽排序，排序保存为浏览器本地的全局图片顺序；在筛选状态下拖动时，只重排当前可见图片并嵌回全局顺序。
+- 右侧详情栏可查看图片属性、学习点、复刻提示、原文链接和 Notion 链接，并可直接增删标签后同步到 Notion。
+- 可从图片详情重新进入拆图流程，复用主页面 image picker。
+
+实现交接见 `doc/MATERIALS_PAGE_DESIGN_README.md`。
 
 ## 封面稳定化
 
@@ -59,6 +74,7 @@ Notion 启动页的已知限制：上传 HTML 会运行在沙箱 iframe 中，�
 - `program/data/covers/`：默认本地封面缓存目录，已加入 `.gitignore`，不提交。
 - `program/manage_server.py`：新增 `POST /api/covers/cache`，供管理台、浏览器扩展或其他本地工具复用。
 - `program/xiaohongshu_to_notion_cli.py`：保存新笔记或命中重复笔记时，会缓存封面并默认上传为 Notion 托管文件；上传失败时回退外链封面。
+- `tests/test_xiaohongshu_cli_cover.py`：覆盖外链封面、Notion File Upload、重复页面封面回补和本地图片补封面流程。
 
 ## Notion Schema
 
@@ -84,7 +100,7 @@ Python CLI 当前使用的目标数据库字段：
 ## 当前技术债
 
 - `program/config.json` 是本地私密配置，应保留在本机但不再提交。
-- `doc` 中的早期设置文档仍描述旧版 `Name / URL / Summary` 数据库结构，仅作历史参考。
+- `doc` 中的早期设置文档仍可能描述旧版 `Name / URL / Summary` 数据库结构，仅作历史参考。
 - `references/trigger.js` 仍引用历史 PowerShell 脚本，当前主线不依赖它。
 - Notion 请求里存在 `verify=False` 的开发期写法，长期使用应改成正常证书校验或明确代理配置。
 
@@ -94,3 +110,4 @@ Python CLI 当前使用的目标数据库字段：
 2. 给 `local_extractor.py` 增加离线 HTML fixture 测试，降低小红书页面结构变化带来的回归风险。
 3. 将 `album_map.json` 的刷新流程文档化，并明确它是否应作为可提交数据。
 4. 清理历史文档中的旧字段说明，保留当前路线为主说明。
+5. 当图片素材库规模变大时，将照片页的分组标签、排除标签、评分、适合复刻等筛选条件逐步下沉到后端查询。

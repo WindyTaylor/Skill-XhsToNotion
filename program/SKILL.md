@@ -23,18 +23,18 @@ metadata: {"clawdbot":{"emoji":"📱→📝","requires":{"env":["NOTION_API_KEY"
 
 1. 从用户消息中提取小红书 URL。若消息是 QQ/OpenClaw 卡片，必须使用完整 `jump_url`，不要删掉 `xsec_token`、`share_id`、`share_channel` 等 query 参数。
 2. 调用 Python CLI 自动抓取页面内容。
-3. CLI 会优先调用 DeepSeek LLM，根据标题、简介、标签以及 `album_descriptions.json` 中的专辑描述，从 `album_map.json` 中推理最相关的前五个专辑候选；DeepSeek 不可用时自动退回关键词兜底。
-4. 未显式指定 `--album` 时，CLI 会自动保存到第 1 个最相关专辑。
+3. 当前 agent 读取 `album_map.json` 和 `album_descriptions.json`，根据用户语境、标题、简介和标签自行判断目标专辑。
+4. 保存时通过 `--album "<专辑名>"` 显式传入目标专辑；不要依赖 CLI 在无参情况下再次调用外部 LLM 分类。
 5. 保存前按笔记 ID 查询 Notion，避免重复创建。
 6. 将标题、链接、简介、作者、标签、状态、封面和专辑关系写入 Notion。
-7. 把保存或命中的页面 ID 写入 `last_page_id.txt`，把最近一次专辑候选写入 `last_album_candidates.json`，供追加标签、更新专辑和数字改选使用。
+7. 把保存或命中的页面 ID 写入 `last_page_id.txt`，供追加标签和更新专辑使用。
 
 ## 执行命令
 
-保存笔记：
+保存笔记前，先从 `album_map.json` 的专辑名中选择最匹配的一项，并优先参考 `album_descriptions.json` 中的语义说明。保存时显式传入 `--album`：
 
 ```powershell
-python xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/explore/..."
+python xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/explore/..." --album "积累拍照灵感"
 ```
 
 保存并指定字段：
@@ -45,10 +45,13 @@ python xiaohongshu_to_notion_cli.py `
   --title "标题" `
   --summary "简介" `
   --author "作者" `
-  --tags "标签1,标签2"
+  --tags "标签1,标签2" `
+  --album "积累拍照灵感"
 ```
 
-保存笔记时不要主动传 `--album`。只有用户明确指定“保存到某个专辑”时，才允许传 `--album "<用户指定专辑名>"`。未指定时必须让 CLI 自动调用 DeepSeek 生成 TOP5 候选并保存到第 1 个候选。
+如果无法判断目标专辑，优先传入用户配置中的收件箱专辑，例如 `--album "未分类收件箱"` 或 `--album "待分类收件箱"`；不要在普通 skill 调用中使用 CLI 自动分类。
+
+`--auto-classify deepseek` 和 `--auto-classify keywords` 仅用于脱离 agent、直接运行 CLI 时的备用自动分类模式。使用 `--auto-classify deepseek` 时，CLI 才会额外调用 DeepSeek API 生成候选并默认保存到第 1 个候选。
 
 ## QQ 卡片链接规则
 
@@ -80,7 +83,7 @@ python xiaohongshu_to_notion_cli.py --save-pending-cover --cover-file "<attachme
 
 - 如果 CLI 输出里出现 `OPENCLAW_REPLY_START` 和 `OPENCLAW_REPLY_END`，最终回复必须只复制这两个标记之间的内容；不要改写、不要省略、不要添加任何额外句子。
 - 保存成功后，回复用户时必须包含保存到 Notion 的专辑名称。
-- 如果 CLI 输出里出现 `专辑候选 TOP5:` 或 `候选专辑：`，回复用户时必须列出 1-5 的全部候选，并说明当前已自动保存到第 1 个候选。
+- 如果显式使用了 `--auto-classify deepseek` 或 `--auto-classify keywords`，且 CLI 输出里出现 `专辑候选 TOP5:` 或 `候选专辑：`，回复用户时必须列出 1-5 的全部候选，并说明当前已自动保存到第 1 个候选。
 - 回复候选时保留数字序号，告诉用户可以直接回复数字来改到对应专辑。
 - 禁止在保存回复里添加主观评论、玩笑、夸赞、感想、延伸解读或颜文字；只返回保存结果和候选专辑。
 - 如果没有写入专辑或找不到专辑映射，需要明确告诉用户“专辑未设置”，不要假装已经分类。
@@ -176,7 +179,7 @@ http://127.0.0.1:8765
 
 收藏管理台用于在浏览器或 Notion embed 中搜索内容总库，按标题、作者、野生标签、状态和专辑过滤；综合搜索、标题、作者、标签使用 Token Field，输入 `+` 或全角 `＋` 生成多个必须同时满足的关键词。下滑加载更多结果，多选笔记后执行批量整理，可在真实 Notion 专辑库中创建专辑并指定六大「主领域」，也可按专辑页面 ID 重命名，且必须迁移本地 `album_map.json`、`album_domains.json` 和 `album_descriptions.json` 中的名称键。左侧可收起工作区用于分别维护“收录什么”“排除什么”“与相近专辑的区别”；三部分组合写入 `album_descriptions.json`，专辑下拉列表和左侧列表的人工拖拽排序先写入浏览器本地缓存，再同步写入 `album_order.json` 并同步影响过滤器、批量目标专辑和 AI 专辑说明列表。卡片中的“拆图”用于查看笔记全部图片，手动选择图片并填写构图标签、动作标签、场景、景别、机位角度、主体类型、光线标签、色彩标签、情绪氛围、学习点、复刻提示、状态、评分和是否适合复刻，保存到 `NOTION_MATERIAL_DATABASE_ID` 指向的摄影素材库；该流程不做 AI 分析。通过右键卡片封面可将笔记移入 Notion 回收站。`update_album_map.py` 应同时刷新 `album_map.json` 与 `album_domains.json`。追加专辑必须保留原有 Relation，不要改成覆盖式移动。
 
-如果用户希望从 Notion 快速打开管理台，运行 `install_console_protocol.ps1`：它会注册 `xhs-notion-console://` 本机协议、立即启动服务，并为当前 Windows 用户设置登录后后台自动启动。Notion 收藏中心的主按钮应优先直接链接 `http://127.0.0.1:8765`，避免沙箱拦截自定义协议；`web/notion_launcher.html`、本机协议、浏览器书签或桌面快捷方式只作为手动兜底。若用户希望 Notion 内嵌完整管理台，可让 `start_management_console.ps1` 以 `cloudflared-quick` 模式启动 Cloudflare Quick Tunnel；该地址是临时地址，固定入口需要后续配置 Named Tunnel 或云端部署。
+如果用户希望从 Notion 快速打开管理台，运行 `install_console_protocol.ps1`：它会注册 `xhs-notion-console://` 本机协议、立即启动服务，并为当前 Windows 用户设置登录后后台自动启动。Notion 收藏中心的主按钮应优先直接链接 `http://127.0.0.1:8765`，避免沙箱拦截自定义协议；`web/notion_launcher.html`、本机协议、浏览器书签或桌面快捷方式只作为手动兜底。
 
 ## 配置
 
@@ -219,9 +222,9 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 ## 维护提示
 
 - 页面提取逻辑集中在 `local_extractor.py`。
-- Notion 保存、查重、DeepSeek 专辑推理、追加标签、更新专辑和专辑描述维护集中在 `xiaohongshu_to_notion_cli.py`。
+- Notion 保存、查重、显式专辑写入、可选 CLI 自动分类、追加标签、更新专辑和专辑描述维护集中在 `xiaohongshu_to_notion_cli.py`。
 - 封面缓存与 Notion File Upload 集中在 `cover_assets.py`；CLI 和管理台共用该模块，运行时数据默认在 `program/data/`，不要提交。
 - 收藏管理台后端集中在 `notion_manager.py` 和 `manage_server.py`，前端集中在 `web/`，包含查询过滤、滚动加载、批量整理、专辑语义说明维护和移入回收站能力。
 - 专辑映射来自 `album_map.json`，可用 `update_album_map.py` 重新生成。
-- 专辑语义描述来自 `album_descriptions.json`，由 `--describe-album` / `--album-description` 更新，供 DeepSeek 推理参考。
+- 专辑语义描述来自 `album_descriptions.json`，由 `--describe-album` / `--album-description` 更新，优先供当前 agent 判断专辑；直接运行 CLI 且显式使用 `--auto-classify deepseek` 时，也会供 DeepSeek 推理参考。
 - Edge 扩展实现已放入 `references/4.edge_with_notion`，作为批量抓取参考，不是当前主开发路线。

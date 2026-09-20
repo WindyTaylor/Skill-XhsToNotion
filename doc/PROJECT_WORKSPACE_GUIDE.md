@@ -1,8 +1,8 @@
 # Project Workspace Guide
 
-Updated: 2026-07-10
+Updated: 2026-08-05
 
-This file is the required entrypoint for future work in this project. Read it before inspecting or editing other project files.
+This file is the full workspace guide for ownership and write-boundary rules. For routine tasks, read `doc/AGENT_FAST_CONTEXT.md` first; read this guide when you need full directory context, are unsure about write boundaries, or are changing Notion fields/schema.
 
 ## Directory Overview
 
@@ -17,13 +17,13 @@ This file is the required entrypoint for future work in this project. Read it be
 
 ## Pre-Task Rules
 
-1. Read this guide first before inspecting or editing other project files.
+1. Read `doc/AGENT_FAST_CONTEXT.md` first for routine tasks; read this guide when full workspace rules are needed.
 2. Treat `program` as the current source of truth for the Python CLI and skill route.
 3. Treat `references` as read-only reference material unless the user explicitly asks to work on the Edge extension or historical trigger route.
 4. Keep local credentials out of commits. `program/config.json` is private runtime configuration; use `program/config_template.json` for examples.
 5. When changing Notion fields, update `program/README.md`, `program/SKILL.md`, and any affected docs together.
 6. Do not enter `.git`, `__pycache__`, or generated output folders for ordinary feature work.
-7. When implementing the Notion embedded search/management console, read `doc/NOTE_MANAGEMENT_CONSOLE_GUIDE.md` before editing code.
+7. When implementing the Notion embedded search/management console, read `program/README.md` and nearby `program/web/` code first. For the photography materials page, also read `doc/MATERIALS_PAGE_DESIGN_README.md`.
 
 ## Naming Notes
 

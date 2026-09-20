@@ -6,7 +6,8 @@
 
 - 从小红书链接自动提取标题、正文简介、作者、话题标签、封面图和最终跳转链接。
 - 写入 Notion 数据库，并设置标题、链接、简介、作者、状态、野生标签、彩色标签和专辑 Relation。
-- 使用 DeepSeek LLM 根据标题、简介、标签和用户维护的专辑描述推理最相关的前五个专辑候选，默认保存到第一个候选；DeepSeek 不可用时自动退回关键词兜底。
+- 作为 Codex/OpenClaw skill 使用时，由当前 AI agent 根据专辑映射和语义描述判断目标专辑，并通过 `--album` 显式写入。
+- 直接命令行使用时，可显式开启 `--auto-classify deepseek` 或 `--auto-classify keywords` 作为备用自动分类模式。
 - 保存前按笔记 ID 查重，重复笔记会跳过创建并更新 `last_page_id.txt`。
 - 支持对最近一次保存的页面追加野生标签。
 - 支持对最近一次保存的页面更新归属专辑。
@@ -23,14 +24,14 @@
 | `configure.py` | 写入本地 Notion API Key 和数据库 ID |
 | `config.py` | 配置加载辅助类 |
 | `config_template.json` | 本地配置模板 |
-| `album_map.json` | 专辑名到 Notion relation page id 的映射 |
-| `album_domains.json` | 专辑名到 Notion「主领域」的映射，供管理台分组定位 |
-| `album_descriptions.json` | 专辑名到语义描述的映射，供 DeepSeek 推理参考 |
-| `album_order.json` | 管理台专辑人工排序，保存 Notion 专辑 page id 顺序 |
+| `album_map.example.json` | 专辑名到 Notion relation page id 的映射模板 |
+| `album_domains.example.json` | 专辑名到 Notion「主领域」的映射模板 |
+| `album_descriptions.example.json` | 专辑语义描述模板；本地 `album_descriptions.json` 优先供当前 AI agent 判断专辑 |
+| `album_order.example.json` | 管理台专辑人工排序模板 |
 | `update_album_map.py` | 从 Notion 数据库刷新专辑映射与主领域映射 |
 | `notion_manager.py` | 收藏管理台后端核心，负责查询、过滤、追加专辑 Relation 和移入回收站 |
 | `manage_server.py` | 本地 Web 收藏管理台服务入口 |
-| `start_management_console.ps1` | 一键启动本地管理台，可选启动 Cloudflare HTTPS 临时隧道 |
+| `start_management_console.ps1` | 一键启动本地管理台 |
 | `install_console_protocol.ps1` | 注册 `xhs-notion-console://` 本机启动协议 |
 | `web/` | 收藏管理台前端页面、样式和交互脚本 |
 | `last_page_id.txt` | 最近一次保存或命中的 Notion 页面 ID |
@@ -68,6 +69,12 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 ```
 
 `program/config.json` 包含私密凭据，不应提交到 Git。
+
+`album_map.json`、`album_domains.json`、`album_order.json`、`album_descriptions.json`、`last_page_id.txt` 和 `last_album_candidates.json` 是本地运行数据，不应提交到 Git。仓库只保留对应的 `*.example.json` 模板。配置 Notion 后可运行：
+
+```powershell
+python program/update_album_map.py
+```
 
 可选配置默认值：
 
@@ -175,7 +182,15 @@ python program/xiaohongshu_to_notion_cli.py `
   --tags "标签1,标签2"
 ```
 
-不要在普通保存时传 `--album`，这样 CLI 才会自动调用 DeepSeek 生成候选并保存到第 1 个候选。只有用户明确指定专辑时才传 `--album`。
+作为 skill 使用时，推荐由当前 AI agent 先判断目标专辑，再通过 `--album` 显式传入。如果无法判断，优先传入用户配置中的收件箱专辑，例如 `--album "未分类收件箱"` 或 `--album "待分类收件箱"`。
+
+脱离 agent 直接运行 CLI 时，如需备用自动分类，可显式开启：
+
+```powershell
+python program/xiaohongshu_to_notion_cli.py `
+  --url "https://www.xiaohongshu.com/explore/..." `
+  --auto-classify deepseek
+```
 
 为最近一次保存的页面追加标签：
 
@@ -238,7 +253,7 @@ http://127.0.0.1:8765
 - 批量合并重复记录；有效字段会汇总到保留项，重复项移入 Notion 回收站。
 - 批量整理区保留原生按钮和下拉框，支持 Tab 键导航与系统高亮色焦点环；禁用项不会获得焦点，过长内容会在不改变真实值的前提下省略显示。
 - 结果卡片中的作者名使用独立身份胶囊展示，点击即可复制完整作者名；野生标签按文字稳定分配柔和彩色样式，不使用高饱和大红色，专辑标签仍保持统一紫色。
-- 在左侧可收起的“AI 专辑语义说明”工作区中，按 Notion 六大「主领域」定位专辑，再分别填写“收录什么”“排除什么”“与相近专辑的区别”；保存时三部分会组合写入 `album_descriptions.json`，后续 DeepSeek 专辑推理会立即读取。旧版自由文本说明会自动载入“收录什么”。
+- 在左侧可收起的“AI 专辑语义说明”工作区中，按 Notion 六大「主领域」定位专辑，再分别填写“收录什么”“排除什么”“与相近专辑的区别”；保存时三部分会组合写入 `album_descriptions.json`，后续 agent 判断专辑会优先参考。旧版自由文本说明会自动载入“收录什么”。
 - 专辑过滤器和批量目标专辑使用管理台自绘选择器，避免浏览器原生下拉菜单在嵌入页里出现白底弹层；专辑下拉列表和左侧专辑列表都支持拖拽排序，顺序会先写入当前浏览器的本地缓存，再同步保存到 `album_order.json`，并同步影响过滤器、批量目标专辑和 AI 专辑说明列表。
 - 右键卡片封面，将笔记移入 Notion 回收站。
 
@@ -260,10 +275,6 @@ powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
 之后可在启动页中点击：
 
 - `启动小红书收藏管理`：调用 `xhs-notion-console://start?mode=local`，启动本地服务并打开 `http://127.0.0.1:8765`。
-
-如需 Notion 内嵌完整管理台，可手动运行 `start_management_console.ps1 -Mode cloudflared-quick`。这需要先安装 `cloudflared`，脚本会尝试复制 `https://*.trycloudflare.com` 到剪贴板，供 Notion `/embed` 使用。
-
-Quick Tunnel 地址是临时地址；固定 Notion 嵌入入口需要 Cloudflare Named Tunnel、自有域名或云端部署，并增加认证。
 
 已知限制：Notion 上传的 HTML 运行在沙箱 iframe 中，可能会拦截 `xhs-notion-console://` 外部协议和弹窗。优先使用登录自启动服务配合普通的 `http://127.0.0.1:8765` 链接；如果按钮无反应，先确认 `http://127.0.0.1:8765/api/health`，再使用本机协议、浏览器书签或桌面快捷方式。
 

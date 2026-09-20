@@ -541,7 +541,11 @@ def recommend_albums_with_llm(data, limit=MAX_ALBUM_CANDIDATES):
     except Exception as e:
         return None, str(e)
 
-def recommend_albums(data, limit=MAX_ALBUM_CANDIDATES):
+def recommend_albums(data, limit=MAX_ALBUM_CANDIDATES, mode="deepseek"):
+    if mode == "keywords":
+        print("[INFO] 使用本地关键词规则生成专辑候选")
+        return recommend_albums_by_keywords(data, limit=limit)
+
     candidates, error = recommend_albums_with_llm(data, limit=limit)
     if candidates:
         print("[OK] 已使用 DeepSeek LLM 推理专辑候选")
@@ -939,15 +943,16 @@ class NotionSaver:
                     "multi_select": [{"name": tag_name} for tag_name in tag_names]
                 }
                 
-        # 调用智能路由分类功能
-        album_name, album_id = resolve_album(data.get("album"), use_default=True)
-        data["album"] = album_name
-        if album_id and album_id != "id_fallback":
-            page_data["properties"]["库B：专辑标签库"] = {
-                "relation": [
-                    {"id": album_id}
-                ]
-            }
+        # Skill 场景下由当前 agent 显式传入 --album；CLI 不再无参自动分类。
+        if data.get("album"):
+            album_name, album_id = resolve_album(data.get("album"), use_default=False)
+            data["album"] = album_name
+            if album_id and album_id != "id_fallback":
+                page_data["properties"]["库B：专辑标签库"] = {
+                    "relation": [
+                        {"id": album_id}
+                    ]
+                }
                 
         # 先用外链封面创建页面，后续上传成功后再替换成 Notion 托管文件。
         # 这样即使缓存或 File Upload 失败，新页面也不会丢封面。
@@ -1090,8 +1095,8 @@ class NotionSaver:
                     update_props[COLOR_TAGS_PROP] = {
                         "multi_select": [{"name": tag_name} for tag_name in tag_names]
                     }
-            album_name, album_id = resolve_album(data.get("album"), use_default=True)
-            if album_id and album_id != "id_fallback" and not current_album:
+            album_name, album_id = resolve_album(data.get("album"), use_default=False)
+            if data.get("album") and album_id and album_id != "id_fallback" and not current_album:
                 update_props["库B：专辑标签库"] = {"relation": [{"id": album_id}]}
                 data["album"] = album_name
 
@@ -1291,7 +1296,7 @@ def _handle_create_album(args):
         sys.exit(1)
 
 
-def finalize_and_save(data):
+def finalize_and_save(data, auto_classify="none"):
     if data.get("cover_file"):
         cover_file = Path(str(data.get("cover_file")).strip()).expanduser()
         if not cover_file.exists() or not cover_file.is_file():
@@ -1301,8 +1306,8 @@ def finalize_and_save(data):
 
     if args_album := data.get("album"):
         data["album"] = args_album
-    else:
-        album_candidates = recommend_albums(data)
+    elif auto_classify != "none":
+        album_candidates = recommend_albums(data, mode=auto_classify)
         if album_candidates:
             data["album_candidates"] = album_candidates
             data["album"] = album_candidates[0]["name"]
@@ -1378,6 +1383,8 @@ def main():
     parser.add_argument('--describe-album', help='为指定专辑写入或更新给 LLM 参考的语义描述')
     parser.add_argument('--album-description', help='专辑语义描述文本，需配合 --describe-album 使用')
     parser.add_argument('--album', help='归属专辑名称，用于Notion中的Relation关联')
+    parser.add_argument('--auto-classify', choices=("none", "keywords", "deepseek"), default="none",
+                        help='未传 --album 时是否由 CLI 自动分类。默认 none；skill/agent 调用时应由 agent 选择专辑并显式传 --album。')
     parser.add_argument('--create-album', help='新建专辑名称，将在 Notion 专辑库中创建新专辑页面')
     parser.add_argument('--domain-number', type=int, choices=range(1, 7), metavar='N',
                         help='新建专辑的主领域编号（1-6），需配合 --create-album 使用。'
@@ -1424,7 +1431,7 @@ def main():
         data["cover_file"] = args.cover_file
         data.pop("cover", None)
         print("正在用本地图片补封面并保存暂存笔记...")
-        sys.exit(finalize_and_save(data))
+        sys.exit(finalize_and_save(data, auto_classify=args.auto_classify))
 
     # 如果是追加标签的指令
     if args.append_tags:
@@ -1579,7 +1586,7 @@ def main():
     if args.album:
         data["album"] = args.album
 
-    sys.exit(finalize_and_save(data))
+    sys.exit(finalize_and_save(data, auto_classify=args.auto_classify))
 
 if __name__ == "__main__":
     main()

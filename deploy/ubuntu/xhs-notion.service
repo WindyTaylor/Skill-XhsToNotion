@@ -1,0 +1,22 @@
+[Unit]
+Description=XHS Notion local management console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xhsnotion
+Group=xhsnotion
+WorkingDirectory=/opt/xhs-notion/program
+EnvironmentFile=/etc/xhs-notion/xhs-notion.env
+ExecStart=/opt/xhs-notion/.venv/bin/python manage_server.py --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/xhs-notion/program /etc/xhs-notion
+
+[Install]
+WantedBy=multi-user.target

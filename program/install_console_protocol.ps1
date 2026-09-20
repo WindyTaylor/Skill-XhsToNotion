@@ -35,7 +35,6 @@ Set-Item -Path $commandKey -Value $command
 
 Write-Host "[OK] Registered xhs-notion-console:// protocol."
 Write-Host "[INFO] Local: xhs-notion-console://start?mode=local"
-Write-Host "[INFO] HTTPS quick tunnel: xhs-notion-console://start?mode=cloudflared-quick"
 
 if (-not $NoAutoStart) {
   New-Item -Path $RunRoot -Force | Out-Null

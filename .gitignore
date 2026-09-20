@@ -132,9 +132,18 @@ node_modules/
 # Local credentials
 program/config.json
 config.json
+program/album_map.json
+program/album_domains.json
+program/album_order.json
+program/album_descriptions.json
+program/last_page_id.txt
+program/last_album_candidates.json
+program/pending_cover_note.json
+program/pending_create_album.json
 
 # Runtime and test outputs
 program/data/
+pic/
 debug_html/
 extracted_results/
 results/
@@ -151,4 +160,5 @@ push_stderr.txt
 # Temporary
 .DS_Store
 *.swp
+*.zip
 NUL

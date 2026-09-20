@@ -52,10 +52,16 @@ def load_auth_config():
         or "admin"
     )
     password = os.getenv("ADMIN_PASSWORD") or file_config.get("ADMIN_PASSWORD") or ""
+    allow_public_without_auth = as_bool(
+        os.getenv("ALLOW_PUBLIC_WITHOUT_AUTH")
+        or file_config.get("ALLOW_PUBLIC_WITHOUT_AUTH"),
+        default=False,
+    )
     return {
         "enabled": bool(str(password).strip()),
         "username": str(username or "admin"),
         "password": str(password),
+        "allow_public_without_auth": allow_public_without_auth,
     }
 
 
@@ -222,6 +228,8 @@ class ManagementConsoleHandler(BaseHTTPRequestHandler):
         if path in AUTH_EXEMPT_PATHS or path.startswith("/covers/"):
             return True
         if not auth.get("enabled"):
+            if auth.get("allow_public_without_auth"):
+                return True
             return self.is_local_request()
 
         header = self.headers.get("Authorization", "")
@@ -369,7 +377,7 @@ def main():
     if server.auth_config.get("enabled"):
         print(f"[OK] 管理台访问保护已启用，登录用户：{server.auth_config.get('username')}")
     else:
-        print("[WARN] 管理台未启用访问保护。公网 Tunnel 前请设置 ADMIN_PASSWORD。")
+        print("[WARN] 管理台未启用访问保护。公网部署前请设置 ADMIN_PASSWORD。")
     print(f"[OK] 小红书收藏管理台已启动: {url}")
     print("[INFO] 在 Notion 页面中使用 /embed 嵌入该地址；停止服务请按 Ctrl+C。")
     try:

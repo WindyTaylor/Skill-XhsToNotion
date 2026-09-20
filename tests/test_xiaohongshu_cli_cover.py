@@ -98,6 +98,45 @@ class NotionSaverCoverTests(unittest.TestCase):
             {"url": "https://sns-img-qc.xhscdn.com/cover.jpg"},
         )
 
+    def test_save_without_album_does_not_write_default_album_relation(self):
+        session = FakeSession(
+            [
+                FakeResponse(
+                    200,
+                    {"id": "page-no-album", "created_time": "2026-08-04T00:00:00.000Z"},
+                )
+            ]
+        )
+        saver = make_saver()
+
+        with (
+            patch("requests.Session", return_value=session),
+            patch.object(cli, "print_album_candidates", return_value=None),
+        ):
+            page_id = saver.save_to_notion(
+                {
+                    "title": "测试笔记",
+                    "url": "https://www.xiaohongshu.com/explore/abc123",
+                    "cover": "https://sns-img-qc.xhscdn.com/cover.jpg",
+                }
+            )
+
+        self.assertEqual(page_id, "page-no-album")
+        self.assertNotIn("库B：专辑标签库", session.posts[0]["json"]["properties"])
+
+    def test_recommend_albums_keywords_mode_skips_deepseek(self):
+        expected = [{"name": "未分类收件箱", "id": "album-id"}]
+
+        with (
+            patch.object(cli, "recommend_albums_with_llm") as mock_llm,
+            patch.object(cli, "recommend_albums_by_keywords", return_value=expected) as mock_keywords,
+        ):
+            result = cli.recommend_albums({"title": "测试笔记"}, mode="keywords")
+
+        self.assertEqual(result, expected)
+        mock_llm.assert_not_called()
+        mock_keywords.assert_called_once()
+
     def test_save_retries_without_initial_cover_when_notion_rejects_url(self):
         session = FakeSession(
             [
