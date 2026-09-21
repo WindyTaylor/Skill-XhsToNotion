@@ -11,7 +11,6 @@ Updated: 2026-09-20
 | 目录 | 内容 |
 | --- | --- |
 | `program` | 主开发代码：Python CLI、页面提取器、Notion 配置工具、专辑映射、skill 文档 |
-| `references` | 参考实现：Edge 扩展批量抓取路线、历史 OpenClaw trigger |
 | `doc` | AI 初始化说明、项目总结、当前功能实现交接 |
 
 ## 主路线：Python CLI 与 Skill
@@ -72,7 +71,7 @@ Notion 启动页的已知限制：上传 HTML 会运行在沙箱 iframe 中，�
 
 - `program/cover_assets.py`：封面下载、SHA-256 去重、本地索引、Notion File Upload、页面封面 PATCH 的共用模块。
 - `program/data/covers/`：默认本地封面缓存目录，已加入 `.gitignore`，不提交。
-- `program/manage_server.py`：新增 `POST /api/covers/cache`，供管理台、浏览器扩展或其他本地工具复用。
+- `program/manage_server.py`：新增 `POST /api/covers/cache`，供管理台或其他本地工具复用。
 - `program/xiaohongshu_to_notion_cli.py`：保存新笔记或命中重复笔记时，会缓存封面并默认上传为 Notion 托管文件；上传失败时回退外链封面。
 - `tests/test_xiaohongshu_cli_cover.py`：覆盖外链封面、Notion File Upload、重复页面封面回补和本地图片补封面流程。
 
@@ -91,20 +90,12 @@ Python CLI 当前使用的目标数据库字段：
 | `彩色标签` | Multi-select |
 | `库B：专辑标签库` | Relation |
 
-## 参考路线：Edge 扩展
-
-`references/4.edge_with_notion` 是 Edge 浏览器插件实现，用于在小红书列表页滚动抓取卡片，导出 CSV/HTML/Markdown，或直接同步到 Notion。它还会打开后台标签页提取话题标签，并支持增量同步模式。
-
-注意：Edge 扩展使用的 Notion 字段是 `笔记标题`、`笔记链接`、`作者名称`、`标签`，与 Python CLI 的内容总库字段不同。后续若要合并两条路线，需要先统一数据库 schema。
-
 ## 当前维护注意
 
 - `program/config.json` 是本地私密配置，应保留在本机但不再提交。
-- `references/trigger.js` 仍引用历史 PowerShell 脚本，当前主线不依赖它。
 - Notion 请求里存在 `verify=False` 的开发期写法，长期使用应改成正常证书校验或明确代理配置。
 
 ## 后续建议
 
-1. 统一 Python CLI 和 Edge 扩展的 Notion schema。
-2. 给 `local_extractor.py` 增加离线 HTML fixture 测试，降低小红书页面结构变化带来的回归风险。
-3. 当图片素材库规模变大时，将照片页的分组标签、排除标签、评分、适合复刻等筛选条件逐步下沉到后端查询。
+1. 给 `local_extractor.py` 增加离线 HTML fixture 测试，降低小红书页面结构变化带来的回归风险。
+2. 当图片素材库规模变大时，将照片页的分组标签、排除标签、评分、适合复刻等筛选条件逐步下沉到后端查询。

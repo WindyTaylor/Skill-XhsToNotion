@@ -227,4 +227,3 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 - 收藏管理台后端集中在 `notion_manager.py` 和 `manage_server.py`，前端集中在 `web/`，包含查询过滤、滚动加载、批量整理、专辑语义说明维护和移入回收站能力。
 - 专辑映射来自 `album_map.json`，可用 `update_album_map.py` 重新生成。
 - 专辑语义描述来自 `album_descriptions.json`，由 `--describe-album` / `--album-description` 更新，优先供当前 agent 判断专辑；直接运行 CLI 且显式使用 `--auto-classify deepseek` 时，也会供 DeepSeek 推理参考。
-- Edge 扩展实现已放入 `references/4.edge_with_notion`，作为批量抓取参考，不是当前主开发路线。

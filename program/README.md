@@ -1,6 +1,6 @@
 # 小红书转 Notion - Python CLI 与 Skill
 
-`program` 是本项目的主开发区，负责把小红书笔记提取并保存到 Notion 内容总库。Edge 扩展批量抓取实现已移至 `../references/4.edge_with_notion`，仅作为参考路线。
+`program` 是本项目的主开发区，负责把小红书笔记提取并保存到 Notion 内容总库。
 
 ## 当前能力
 
@@ -101,7 +101,7 @@ DEEPSEEK_MODEL=deepseek-chat
 - `NotionFileUploader`：封装 Notion File Upload 的创建、发送文件、设置页面封面流程。
 - `CoverAssetService`：组合“缓存 -> 上传 -> 设置页面封面”，CLI 和管理台共用。
 
-默认保存笔记时会把封面上传为 Notion 托管文件；如需只使用外链封面，可设置 `COVER_UPLOAD_TO_NOTION=false`。本地运行管理台后，浏览器扩展可调用：
+默认保存笔记时会把封面上传为 Notion 托管文件；如需只使用外链封面，可设置 `COVER_UPLOAD_TO_NOTION=false`。本地运行管理台后，其他本地工具可调用：
 
 ```http
 POST http://127.0.0.1:8765/api/covers/cache
@@ -114,7 +114,7 @@ Content-Type: application/json
 }
 ```
 
-返回的 `asset` 包含本地文件、哈希、源 URL、关联页面和 Notion `file_upload` id，适合扩展端复用。
+返回的 `asset` 包含本地文件、哈希、源 URL、关联页面和 Notion `file_upload` id，适合其他本地工具复用。
 
 ## 摄影拆图素材库
 
@@ -282,5 +282,4 @@ powershell -ExecutionPolicy Bypass -File program/install_console_protocol.ps1
 
 - 小红书页面结构可能变化，提取失败时优先检查 `local_extractor.py`。
 - 当前代码中为了处理本地网络/证书问题，Notion 请求存在 `verify=False` 的开发期写法；如需长期稳定使用，后续应改为正常证书校验或明确代理配置。
-- `references/4.edge_with_notion` 使用另一套 Notion 字段名，与 Python CLI 并不完全兼容，修改前先对齐目标数据库 schema。
 - 收藏管理台默认只监听 `127.0.0.1`，不要在公网环境暴露未加认证的服务。

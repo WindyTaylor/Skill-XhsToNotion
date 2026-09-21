@@ -2,7 +2,7 @@
 
 A Python CLI and Codex/OpenClaw skill for saving Xiaohongshu notes into a Notion content database. Given a Xiaohongshu URL, the tool extracts the note title, summary, author, tags, cover image, and final redirected URL, then writes the result to Notion with duplicate detection and explicit album relation support.
 
-The active implementation lives in `program`. The Edge extension under `references/4.edge_with_notion` is kept as a historical/reference route.
+The active implementation lives in `program` as a Python CLI and Codex/OpenClaw skill.
 
 ## Features
 
@@ -33,7 +33,6 @@ The active implementation lives in `program`. The Edge extension under `referenc
 │   ├── SKILL.md                      # Codex/OpenClaw skill instructions
 │   ├── web/                          # Embedded management console frontend
 │   └── README.md                     # Detailed Chinese documentation
-├── references/                       # Edge extension and historical scripts
 ├── doc/                              # AI initialization, project summary, and current feature handoff docs
 └── agent.md                          # Collaboration notes
 ```

@@ -2,7 +2,7 @@
 
 一个用于把小红书笔记沉淀到 Notion 内容总库的 Python CLI 与 Codex/OpenClaw skill。用户提供小红书链接后，脚本会抓取笔记标题、简介、作者、标签、封面和最终跳转链接，保存到 Notion 数据库；作为 skill 调用时，由当前 AI agent 根据专辑说明选择目标专辑并显式传入。
 
-当前主路线是 `program` 目录下的 Python CLI。`references/4.edge_with_notion` 中保留了 Edge 扩展批量抓取方案，仅作为历史和参考实现。
+当前主路线是 `program` 目录下的 Python CLI 与 Codex/OpenClaw skill。
 
 ## 功能特性
 
@@ -36,7 +36,6 @@
 │   ├── SKILL.md                      # Codex/OpenClaw skill 说明
 │   ├── web/                          # 嵌入式收藏管理台前端
 │   └── README.md                     # program 目录详细说明
-├── references/                       # Edge 扩展和历史触发脚本参考
 ├── doc/                              # AI 初始化、项目总结和当前功能交接文档
 └── agent.md                          # 项目协作说明
 ```
@@ -159,7 +158,7 @@ $env:DEEPSEEK_API_KEY="sk_xxx"
 
 CLI 保存笔记时会优先把小红书封面下载到本地缓存，再通过 Notion File Upload 上传为 Notion 托管文件并设置为页面封面，避免图库视图继续依赖不稳定的外链封面。缓存索引和图片默认保存在 `program/data/`，该目录已加入 `.gitignore`。
 
-管理台后端保留了可复用接口，后续浏览器扩展可以调用本机服务完成缓存和上传，而不是直接持有 Notion token：
+管理台后端保留了可复用接口，其他本地工具可以调用本机服务完成缓存和上传，而不是直接持有 Notion token：
 
 ```http
 POST http://127.0.0.1:8765/api/covers/cache
@@ -313,7 +312,6 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 - 小红书页面提取逻辑集中在 `program/local_extractor.py`。
 - Notion 保存、查重、显式专辑写入、可选 CLI 自动分类、追加标签、更新专辑集中在 `program/xiaohongshu_to_notion_cli.py`。
 - Notion 字段发生变化时，需要同步更新 `program/README.md`、`program/SKILL.md` 和本 README。
-- `references/4.edge_with_notion` 使用另一套 Notion 字段名，与当前 Python CLI 不完全兼容，合并两条路线前需要先统一 schema。
 - 当前代码中为了处理本地网络或证书问题，Notion 请求存在 `verify=False` 的开发期写法；长期使用时建议改为正常证书校验或明确代理配置。
 - 收藏管理台不会把 Notion token 写入前端页面；token 只从本地配置或环境变量进入后端进程。
 
