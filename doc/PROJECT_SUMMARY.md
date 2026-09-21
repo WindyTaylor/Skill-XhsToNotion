@@ -1,6 +1,6 @@
 # 小红书转 Notion 项目总结
 
-Updated: 2026-08-05
+Updated: 2026-09-20
 
 ## 项目目标
 
@@ -12,7 +12,7 @@ Updated: 2026-08-05
 | --- | --- |
 | `program` | 主开发代码：Python CLI、页面提取器、Notion 配置工具、专辑映射、skill 文档 |
 | `references` | 参考实现：Edge 扩展批量抓取路线、历史 OpenClaw trigger |
-| `doc` | 项目说明、历史状态、配置指南、初始化工作区规则 |
+| `doc` | AI 初始化说明、项目总结、当前功能实现交接 |
 
 ## 主路线：Python CLI 与 Skill
 
@@ -97,10 +97,9 @@ Python CLI 当前使用的目标数据库字段：
 
 注意：Edge 扩展使用的 Notion 字段是 `笔记标题`、`笔记链接`、`作者名称`、`标签`，与 Python CLI 的内容总库字段不同。后续若要合并两条路线，需要先统一数据库 schema。
 
-## 当前技术债
+## 当前维护注意
 
 - `program/config.json` 是本地私密配置，应保留在本机但不再提交。
-- `doc` 中的早期设置文档仍可能描述旧版 `Name / URL / Summary` 数据库结构，仅作历史参考。
 - `references/trigger.js` 仍引用历史 PowerShell 脚本，当前主线不依赖它。
 - Notion 请求里存在 `verify=False` 的开发期写法，长期使用应改成正常证书校验或明确代理配置。
 
@@ -108,6 +107,4 @@ Python CLI 当前使用的目标数据库字段：
 
 1. 统一 Python CLI 和 Edge 扩展的 Notion schema。
 2. 给 `local_extractor.py` 增加离线 HTML fixture 测试，降低小红书页面结构变化带来的回归风险。
-3. 将 `album_map.json` 的刷新流程文档化，并明确它是否应作为可提交数据。
-4. 清理历史文档中的旧字段说明，保留当前路线为主说明。
-5. 当图片素材库规模变大时，将照片页的分组标签、排除标签、评分、适合复刻等筛选条件逐步下沉到后端查询。
+3. 当图片素材库规模变大时，将照片页的分组标签、排除标签、评分、适合复刻等筛选条件逐步下沉到后端查询。

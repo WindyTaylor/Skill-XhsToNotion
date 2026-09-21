@@ -34,7 +34,7 @@ The active implementation lives in `program`. The Edge extension under `referenc
 │   ├── web/                          # Embedded management console frontend
 │   └── README.md                     # Detailed Chinese documentation
 ├── references/                       # Edge extension and historical scripts
-├── doc/                              # Project notes and setup docs
+├── doc/                              # AI initialization, project summary, and current feature handoff docs
 └── agent.md                          # Collaboration notes
 ```
 
@@ -71,6 +71,14 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 python program/update_album_map.py
 python program/xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/explore/..." --album "未分类收件箱"
 ```
+
+You can also hand the repository to an AI coding tool:
+
+```text
+clone this skill: <repo-url>, copy this Notion template: https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?source=copy_link, and initialize the skill according to doc/AI_INIT.md.
+```
+
+The public Notion template contains a clean `小红书收藏中心`, `专辑分类后端`, an empty `库A：内容总库`, and a preset `库B：专辑标签库`. After duplicating the template, each user still needs their own Notion integration and must grant it access to the duplicated pages/databases. Real tokens and duplicated database IDs belong only in local private config files.
 
 ## Configuration
 
@@ -196,5 +204,6 @@ QQ card preview fields such as `title`, `desc`, and `tag` may be truncated. Use 
 - [program/README.md](program/README.md): detailed Chinese CLI and skill documentation.
 - [program/SKILL.md](program/SKILL.md): Codex/OpenClaw skill invocation rules.
 - [doc/AI_INIT.md](doc/AI_INIT.md): initialization guide for other AI coding tools.
+- [doc/NOTION_SETUP.md](doc/NOTION_SETUP.md): Chinese Notion integration and database setup guide for users.
 - [doc/PROJECT_SUMMARY.md](doc/PROJECT_SUMMARY.md): project route and current status.
-- [doc/PROJECT_WORKSPACE_GUIDE.md](doc/PROJECT_WORKSPACE_GUIDE.md): workspace rules for future work.
+- [doc/MATERIALS_PAGE_DESIGN_README.md](doc/MATERIALS_PAGE_DESIGN_README.md): implementation handoff for the image materials page.

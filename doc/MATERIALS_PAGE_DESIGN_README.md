@@ -15,12 +15,9 @@ Updated: 2026-08-05
 - 在详情侧栏直接补充或移除标签，并同步写回 Notion。
 - 支持从来源笔记重新进入拆图流程。
 
-## 设计稿
+## 视觉方向
 
-- 设计图：`doc/materials-filter-design-v2.png`
-- 可渲染 HTML：`doc/materials-filter-design-v2.html`
-
-早期青绿色设计已废弃，不要继续沿用。当前实现以 `program/web/styles.css` 的主页面色板为基础，采用克制的浅色工作台布局。
+早期青绿色设计稿已废弃，不再保留在开源仓库。当前实现以 `program/web/styles.css` 的主页面色板为基础，采用克制的浅色工作台布局。
 
 ## 当前相关文件
 

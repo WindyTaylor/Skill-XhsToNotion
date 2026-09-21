@@ -37,7 +37,7 @@
 │   ├── web/                          # 嵌入式收藏管理台前端
 │   └── README.md                     # program 目录详细说明
 ├── references/                       # Edge 扩展和历史触发脚本参考
-├── doc/                              # 配置、状态、项目说明等文档
+├── doc/                              # AI 初始化、项目总结和当前功能交接文档
 └── agent.md                          # 项目协作说明
 ```
 
@@ -80,6 +80,20 @@ python program/xiaohongshu_to_notion_cli.py --url "https://www.xiaohongshu.com/e
 ```text
 clone 这个 skill：<repo-url>，并根据 doc/AI_INIT.md 完成初始化。
 ```
+
+本项目提供一套可复制的公开 Notion 模板：
+
+```text
+https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?source=copy_link
+```
+
+如果希望同时初始化 Notion，可以把下面这句话交给你的本地 AI 编程工具：
+
+```text
+clone 这个 skill：<repo-url>，复制这个 Notion 模板：https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?source=copy_link，并根据 doc/AI_INIT.md 完成初始化。
+```
+
+这套公开模板包含 `小红书收藏中心`、`专辑分类后端`、空白 `库A：内容总库` 和预设分类 `库B：专辑标签库`。复制模板后仍需要创建自己的 Notion integration，并把 integration 授权给复制后的页面和数据库；真实 token 和复制后数据库 ID 只写入本地 `program/config.json`，不要提交到 Git。
 
 ## Notion 数据库字段
 
@@ -308,6 +322,6 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 - [program/README.md](program/README.md)：Python CLI 与 skill 详细说明。
 - [program/SKILL.md](program/SKILL.md)：Codex/OpenClaw skill 调用规则。
 - [doc/PROJECT_SUMMARY.md](doc/PROJECT_SUMMARY.md)：项目路线和当前状态总结。
-- [doc/PROJECT_WORKSPACE_GUIDE.md](doc/PROJECT_WORKSPACE_GUIDE.md)：目录用途和后续协作规则。
-- [doc/AGENT_FAST_CONTEXT.md](doc/AGENT_FAST_CONTEXT.md)：给后续 AI agent 的快速项目上下文。
+- [doc/NOTION_SETUP.md](doc/NOTION_SETUP.md)：给用户看的 Notion integration、库 A/库 B 和本地配置指南。
 - [doc/AI_INIT.md](doc/AI_INIT.md)：给其他 AI 编程工具的初始化说明。
+- [doc/MATERIALS_PAGE_DESIGN_README.md](doc/MATERIALS_PAGE_DESIGN_README.md)：图片素材管理页实现交接。

@@ -200,7 +200,7 @@ python program/configure.py --api-key "ntn_xxx" --db-url "https://www.notion.so/
 - `NOTION_MATERIAL_DATA_SOURCE_ID`：摄影素材库 data source id。留空时后端会自动从 database 解析。
 - `XHS_FETCH_MIN_INTERVAL_SECONDS`：拆图回源请求小红书原文页面的最小间隔，默认 `3`。
 - `XHS_IMAGE_DOWNLOAD_INTERVAL_SECONDS`：拆图下载小红书图片的最小间隔，默认 `1`。
-- `DEEPSEEK_API_KEY`：用于 LLM 专辑推理。未配置或调用失败时，CLI 会自动退回关键词兜底。
+- `DEEPSEEK_API_KEY`：仅在显式使用 `--auto-classify deepseek` 时用于 CLI 备用专辑推理；普通 skill/agent 调用不需要配置。
 - `DEEPSEEK_BASE_URL`：默认 `https://api.deepseek.com`
 - `DEEPSEEK_MODEL`：默认 `deepseek-chat`
 
