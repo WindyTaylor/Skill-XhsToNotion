@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Before starting routine work in this project, read `doc/PROJECT_SUMMARY.md` for the current route and implementation map. Read `doc/AI_INIT.md` when changing setup or onboarding behavior.
+Before starting routine work in this project, read `README.md` for the current route and implementation map. Read `doc/AI_INIT.md` when changing setup or onboarding behavior.
 
 Treat `program` as the active Python CLI and skill development area. Keep local credentials, especially `program/config.json`, out of commits.
 

@@ -41,10 +41,23 @@ https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?sou
 - 复制完成后，仍然需要创建自己的 Notion integration，并把 integration 授权给复制后的模板页面或其中两个数据库。
 - 然后继续执行本文的“第五步：配置本地 skill”。
 
-你可以把下面这句话交给自己的 AI 编程工具：
+### 让 AI 继续配置本地 skill
+
+在继续之前，请确认你已经完成：
+
+- 已复制公开 Notion 模板到自己的工作区。
+- 已创建自己的 Notion integration。
+- 已把 integration 授权给复制后的模板页面或数据库。
+- 已准备好 Notion token。
+
+然后把下面这句话交给自己的 AI 编程工具：
 
 ```text
-请帮我 clone 这个 skill：<repo-url>，复制这个 Notion 模板：https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?source=copy_link，然后指导我创建 Notion integration、把 integration 授权给复制后的模板页面，并使用复制后的库A完成本地配置。
+请帮我 clone 这个 skill 工程：<repo-url>。
+我已经复制了公开 Notion 模板，并完成了 Notion integration 授权。
+请你阅读项目 README 和初始化文档，指导我完成本地配置，
+提取复制后模板里的数据库 ID，写入配置文件，
+并运行一次测试，确认 skill 可以把小红书笔记保存到我的 Notion。
 ```
 
 如果 AI 工具有 Notion 连接能力，它可以帮你检查复制后的 `库A：内容总库`、`库B：专辑标签库` 是否存在，并确认库 A 中的 `库B：专辑标签库` Relation 指向库 B。如果 AI 没有 Notion 连接能力，它仍然可以根据本文档指导你在 Notion UI 中完成这些操作。

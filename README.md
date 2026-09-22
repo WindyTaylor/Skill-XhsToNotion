@@ -36,7 +36,7 @@
 │   ├── SKILL.md                      # Codex/OpenClaw skill 说明
 │   ├── web/                          # 嵌入式收藏管理台前端
 │   └── README.md                     # program 目录详细说明
-├── doc/                              # AI 初始化、项目总结和当前功能交接文档
+├── doc/                              # AI 初始化、Notion 配置和当前功能交接文档
 └── agent.md                          # 项目协作说明
 ```
 
@@ -86,10 +86,14 @@ clone 这个 skill：<repo-url>，并根据 doc/AI_INIT.md 完成初始化。
 https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?source=copy_link
 ```
 
-如果希望同时初始化 Notion，可以把下面这句话交给你的本地 AI 编程工具：
+如果希望使用公开模板，请先在自己的 Notion 工作区复制模板、创建 Notion integration，并把 integration 授权给复制后的页面或数据库。完成后再把下面这句话交给你的本地 AI 编程工具：
 
 ```text
-clone 这个 skill：<repo-url>，复制这个 Notion 模板：https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?source=copy_link，并根据 doc/AI_INIT.md 完成初始化。
+请帮我 clone 这个 skill 工程：<repo-url>。
+我已经复制了公开 Notion 模板，并完成了 Notion integration 授权。
+请你阅读项目 README 和初始化文档，指导我完成本地配置，
+提取复制后模板里的数据库 ID，写入配置文件，
+并运行一次测试，确认 skill 可以把小红书笔记保存到我的 Notion。
 ```
 
 这套公开模板包含 `小红书收藏中心`、`专辑分类后端`、空白 `库A：内容总库` 和预设分类 `库B：专辑标签库`。复制模板后仍需要创建自己的 Notion integration，并把 integration 授权给复制后的页面和数据库；真实 token 和复制后数据库 ID 只写入本地 `program/config.json`，不要提交到 Git。
@@ -319,7 +323,6 @@ QQ 卡片里的 `title`、`desc`、`tag` 可能被截断，只能作为页面抓
 
 - [program/README.md](program/README.md)：Python CLI 与 skill 详细说明。
 - [program/SKILL.md](program/SKILL.md)：Codex/OpenClaw skill 调用规则。
-- [doc/PROJECT_SUMMARY.md](doc/PROJECT_SUMMARY.md)：项目路线和当前状态总结。
 - [doc/NOTION_SETUP.md](doc/NOTION_SETUP.md)：给用户看的 Notion integration、库 A/库 B 和本地配置指南。
 - [doc/AI_INIT.md](doc/AI_INIT.md)：给其他 AI 编程工具的初始化说明。
 - [doc/MATERIALS_PAGE_DESIGN_README.md](doc/MATERIALS_PAGE_DESIGN_README.md)：图片素材管理页实现交接。

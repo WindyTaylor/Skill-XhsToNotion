@@ -35,17 +35,19 @@ https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?sou
 用户可以这样指挥自己的 AI 编程工具：
 
 ```text
-clone 这个 skill：<repo-url>，复制这个 Notion 模板：https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?source=copy_link，并根据 doc/AI_INIT.md 完成初始化。
+请帮我 clone 这个 skill 工程：<repo-url>。
+我已经复制了公开 Notion 模板，并完成了 Notion integration 授权。
+请你阅读项目 README 和初始化文档，指导我完成本地配置，
+提取复制后模板里的数据库 ID，写入配置文件，
+并运行一次测试，确认 skill 可以把小红书笔记保存到我的 Notion。
 ```
 
-复制模板后，AI 需要：
+收到这条请求后，AI 需要：
 
-1. 让用户在 Notion 中 Duplicate 模板到自己的工作区。
-2. 让用户创建自己的 Notion integration token。
-3. 指导用户把 integration 授权给复制后的模板页面，或至少授权给其中的 `库A：内容总库` 和 `库B：专辑标签库`。
-4. 从复制后的页面中找到 `库A：内容总库`，使用它的 URL 或 database ID 运行 `program/configure.py`。
-5. 运行 `program/update_album_map.py`，生成当前用户自己的 `album_map.json` 和 `album_domains.json`。
-6. 如果用户的 AI 工具有 Notion 操作能力，可以由 AI 帮用户检查库 A/库 B schema、确认 Relation 字段存在、确认 integration 已授权；如果没有 Notion 操作能力，则把需要用户在 Notion UI 中点击的位置明确说出来。
+1. 先确认用户已经在自己的 Notion 工作区 Duplicate 模板、创建 integration，并完成授权；如果其中任一步未完成，先指导用户补齐。
+2. 从复制后的页面中找到 `库A：内容总库`，使用它的 URL 或 database ID 运行 `program/configure.py`。
+3. 运行 `program/update_album_map.py`，生成当前用户自己的 `album_map.json` 和 `album_domains.json`。
+4. 如果用户的 AI 工具有 Notion 操作能力，可以由 AI 帮用户检查库 A/库 B schema、确认 Relation 字段存在、确认 integration 已授权；如果没有 Notion 操作能力，则把需要用户在 Notion UI 中点击的位置明确说出来。
 
 不要使用作者原始 Notion 页面、作者真实数据库 ID 或作者本地配置。
 
