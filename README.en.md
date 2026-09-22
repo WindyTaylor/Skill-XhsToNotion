@@ -76,7 +76,7 @@ You can also hand the repository to an AI coding tool after duplicating the publ
 ```text
 Please clone this skill project: <repo-url>.
 I have duplicated the public Notion template and granted my Notion integration access to the duplicated page.
-Please read the project README and initialization docs, guide me through local configuration,
+After cloning, please read README.md and doc/AI_INIT.md inside the project directory, guide me through local configuration,
 extract the database id from my duplicated template, write it into the config file,
 and run one test to confirm the skill can save a Xiaohongshu note to my Notion.
 ```

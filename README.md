@@ -91,7 +91,7 @@ https://grass-subway-525.notion.site/Notion-3e20eae5d4b48161a011df97ca905557?sou
 ```text
 请帮我 clone 这个 skill 工程：<repo-url>。
 我已经复制了公开 Notion 模板，并完成了 Notion integration 授权。
-请你阅读项目 README 和初始化文档，指导我完成本地配置，
+clone 完成后，请在工程目录里阅读 README.md 和 doc/AI_INIT.md，指导我完成本地配置，
 提取复制后模板里的数据库 ID，写入配置文件，
 并运行一次测试，确认 skill 可以把小红书笔记保存到我的 Notion。
 ```
